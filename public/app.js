@@ -8,8 +8,8 @@ const STALE_MS = 3 * 60_000;
 const CACHE_MAX_AGE_MS = 24 * 60 * 60_000;
 const CACHE_KEY = "borsa:last";
 const PREFS_KEY = "borsa:prefs";
-// Link included when sharing rates. Set this to your bot's Mini App link, e.g. "https://t.me/YourBot/app".
-const SHARE_URL = "";
+// Link included when sharing rates; opens the Mini App directly in Telegram.
+const SHARE_URL = "https://t.me/IraqDollarExchangeBot?startapp";
 
 const CITIES = [
   { key: "b", ar: "بغداد", en: "Baghdad" },
