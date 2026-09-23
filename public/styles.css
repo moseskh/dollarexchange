@@ -1,0 +1,552 @@
+/* ==========================================================================
+   Borsa design system
+   1. Tokens   2. Base   3. Components   4. Sections   5. Motion
+   Colours come from the user's Telegram theme (--tg-theme-*), with a
+   built-in light/dark palette as fallback when opened outside Telegram.
+   ========================================================================== */
+
+/* 1. Tokens ---------------------------------------------------------------- */
+
+:root {
+  --font: "IBM Plex Sans Arabic", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  /* Type scale */
+  --fs-price: clamp(26px, 8.6vw, 34px);
+  --fs-title: 19px;
+  --fs-headline: 17px;
+  --fs-body: 15px;
+  --fs-callout: 14px;
+  --fs-caption: 12.5px;
+  --fs-micro: 11px;
+
+  /* Spacing (4pt grid) */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --gutter: 16px;
+
+  /* Radii */
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 22px;
+  --r-pill: 999px;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+  --ease-elastic: cubic-bezier(0.5, 1.25, 0.75, 1.25);
+  --ease-elastic-strong: cubic-bezier(0.5, 1.5, 0.75, 1.25);
+  --dur-1: 120ms;
+  --dur-2: 220ms;
+  --dur-3: 420ms;
+
+  /* Fallback palette (light) */
+  --fb-bg: #f2f3f7;
+  --fb-surface: #ffffff;
+  --fb-text: #0d1016;
+  --fb-hint: #858b95;
+  --fb-accent: #2481cc;
+  --fb-on-accent: #ffffff;
+
+  /* Semantic, theme-independent */
+  --up: #14a049;
+  --down: #e0383e;
+  --gold: #e8a10c;
+  --moon: #6b7cff;
+
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 6px 20px rgba(16, 24, 40, 0.05);
+}
+
+:root[data-scheme="dark"] {
+  --fb-bg: #0b0d11;
+  --fb-surface: #181b21;
+  --fb-text: #f3f4f6;
+  --fb-hint: #8a909a;
+  --fb-accent: #4c9ce6;
+
+  --up: #34c46a;
+  --down: #ff6166;
+  --gold: #f5b53d;
+  --moon: #c9d2ff;
+
+  --shadow-card: none;
+}
+
+:root {
+  --c-bg: var(--tg-theme-secondary-bg-color, var(--fb-bg));
+  --c-surface: var(--tg-theme-section-bg-color, var(--tg-theme-bg-color, var(--fb-surface)));
+  --c-text: var(--tg-theme-text-color, var(--fb-text));
+  --c-hint: var(--tg-theme-hint-color, var(--fb-hint));
+  --c-accent: var(--tg-theme-button-color, var(--fb-accent));
+  --c-on-accent: var(--tg-theme-button-text-color, var(--fb-on-accent));
+  --c-link: var(--tg-theme-accent-text-color, var(--tg-theme-link-color, var(--c-accent)));
+
+  /* Tints: rgba fallbacks, refined with color-mix where supported */
+  --c-sep: rgba(128, 128, 128, 0.18);
+  --c-fill: rgba(128, 128, 128, 0.11);
+  --c-fill-strong: rgba(128, 128, 128, 0.2);
+  --c-accent-soft: rgba(36, 129, 204, 0.13);
+  --c-up-soft: rgba(20, 160, 73, 0.13);
+  --c-down-soft: rgba(224, 56, 62, 0.12);
+  color-scheme: light;
+}
+
+/* Telegram's colours only fit when its scheme matches the one the user picked;
+   otherwise the app's own palette takes over. */
+:root[data-palette="app"] {
+  --c-bg: var(--fb-bg);
+  --c-surface: var(--fb-surface);
+  --c-text: var(--fb-text);
+  --c-hint: var(--fb-hint);
+  --c-accent: var(--fb-accent);
+  --c-on-accent: var(--fb-on-accent);
+  --c-link: var(--fb-accent);
+}
+:root[data-scheme="dark"] { color-scheme: dark; }
+
+@supports (color: color-mix(in srgb, red, blue)) {
+  :root {
+    --c-sep: color-mix(in srgb, var(--c-text) 9%, transparent);
+    --c-fill: color-mix(in srgb, var(--c-text) 6%, transparent);
+    --c-fill-strong: color-mix(in srgb, var(--c-text) 11%, transparent);
+    --c-accent-soft: color-mix(in srgb, var(--c-accent) 14%, transparent);
+    --c-up-soft: color-mix(in srgb, var(--up) 14%, transparent);
+    --c-down-soft: color-mix(in srgb, var(--down) 14%, transparent);
+  }
+}
+
+/* Registered so the card glow can slide between corners when the layout mirrors. */
+@property --glow-x {
+  syntax: "<percentage>";
+  inherits: true;
+  initial-value: 100%;
+}
+
+/* 2. Base ------------------------------------------------------------------ */
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+html, body { margin: 0; }
+
+body {
+  min-height: var(--tg-viewport-stable-height, 100vh);
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-family: var(--font);
+  font-size: var(--fs-body);
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+button:disabled { cursor: default; opacity: 0.5; }
+
+svg { display: block; flex-shrink: 0; }
+
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
+
+[hidden] { display: none !important; }
+
+.num {
+  font-variant-numeric: tabular-nums;
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.icon {
+  width: 20px;
+  height: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.star { width: 13px; height: 13px; fill: var(--gold); }
+
+/* 3. Components ------------------------------------------------------------ */
+
+/* Press feedback for anything tappable */
+.press { transition: transform var(--dur-1) var(--ease-out), background-color var(--dur-2), color var(--dur-2), opacity var(--dur-2); }
+.press:not(:disabled):active { transform: scale(0.96); }
+
+/* Card */
+.card {
+  background: var(--c-surface);
+  border-radius: var(--r-lg);
+  padding: var(--sp-4);
+  box-shadow: var(--shadow-card);
+}
+
+/* Icon button (circular) */
+.icon-btn {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-pill);
+  background: var(--c-surface);
+  color: var(--c-link);
+  display: grid;
+  place-items: center;
+  font-size: var(--fs-body);
+  font-weight: 600;
+  box-shadow: var(--shadow-card);
+}
+
+/* Theme toggle: sun morphs into a crescent moon */
+.theme-btn { color: var(--gold); transition: transform var(--dur-1) var(--ease-out), color var(--dur-3) var(--ease-out); }
+[data-scheme="dark"] .theme-btn { color: var(--moon); }
+.sun-and-moon { width: 22px; height: 22px; overflow: visible; }
+.sun-and-moon :is(.sun, .sun-beams, .moon circle) { transform-origin: center; }
+.sun-and-moon .sun { transition: transform 500ms var(--ease-elastic-strong); }
+.sun-and-moon .sun-beams {
+  stroke-width: 2;
+  stroke-linecap: round;
+  transition: transform 500ms var(--ease-elastic), opacity 500ms var(--ease-out);
+}
+.sun-and-moon .moon circle { transition: transform 250ms var(--ease-out); }
+[data-scheme="dark"] .sun-and-moon .sun { transform: scale(1.75); transition: transform 250ms var(--ease-out); }
+[data-scheme="dark"] .sun-and-moon .sun-beams { transform: rotate(-25deg); opacity: 0; transition-duration: 150ms; }
+[data-scheme="dark"] .sun-and-moon .moon circle { transform: translateX(-7px); transition: transform 500ms var(--ease-elastic) 250ms; }
+
+/* Primary button */
+.btn-primary {
+  height: 46px;
+  padding: 0 28px;
+  border-radius: var(--r-md);
+  background: var(--c-accent);
+  color: var(--c-on-accent);
+  font-weight: 600;
+}
+
+/* Change chip */
+.delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: var(--r-pill);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  white-space: nowrap;
+  direction: ltr;
+  transition: background-color var(--dur-3), color var(--dur-3);
+}
+.delta .d-sep { opacity: 0.45; }
+.delta.up { color: var(--up); background: var(--c-up-soft); }
+.delta.down { color: var(--down); background: var(--c-down-soft); }
+.delta.flat { color: var(--c-hint); background: var(--c-fill); }
+
+.tri { width: 9px; height: 9px; }
+
+/* Toast */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(24px + var(--tg-safe-area-inset-bottom, 0px));
+  z-index: 10;
+  max-width: calc(100vw - 32px);
+  padding: 11px 18px;
+  border-radius: var(--r-pill);
+  background: var(--c-text);
+  color: var(--c-surface);
+  font-size: var(--fs-callout);
+  font-weight: 500;
+  white-space: nowrap;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, 20px) scale(0.96);
+  transition: opacity var(--dur-2) var(--ease-out), transform var(--dur-3) var(--ease-spring);
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0) scale(1); }
+
+/* Skeleton: keeps the placeholder text for sizing, hides it behind a shimmer */
+.sk {
+  color: transparent !important;
+  background: linear-gradient(90deg, var(--c-fill) 25%, var(--c-fill-strong) 50%, var(--c-fill) 75%) !important;
+  background-size: 200% 100% !important;
+  border-radius: 8px;
+  animation: shimmer 1.3s linear infinite;
+}
+.sk * { visibility: hidden; }
+
+/* 4. Sections -------------------------------------------------------------- */
+
+.app {
+  max-width: 560px;
+  margin: 0 auto;
+  padding:
+    calc(var(--sp-3) + var(--tg-safe-area-inset-top, 0px) + var(--tg-content-safe-area-inset-top, 0px))
+    var(--gutter)
+    calc(var(--sp-8) + var(--tg-safe-area-inset-bottom, 0px));
+}
+.stack { display: flex; flex-direction: column; gap: var(--sp-3); }
+
+/* App bar */
+.appbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-1) 0 var(--sp-4);
+}
+.brand { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+.brand > div { min-width: 0; }
+.logo {
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+  display: grid;
+  place-items: center;
+  background: var(--c-accent);
+  color: var(--c-on-accent);
+  font-size: 21px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+@supports (color: color-mix(in srgb, red, blue)) {
+  .logo {
+    background: linear-gradient(145deg, color-mix(in srgb, var(--c-accent) 80%, #fff), var(--c-accent) 55%, color-mix(in srgb, var(--c-accent) 75%, #000));
+    box-shadow: 0 6px 16px color-mix(in srgb, var(--c-accent) 30%, transparent);
+  }
+}
+.brand h1 { margin: 0; font-size: var(--fs-title); font-weight: 700; line-height: 1.25; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.appbar-actions { display: flex; gap: var(--sp-2); flex-shrink: 0; }
+
+/* Live status */
+.status { display: flex; align-items: center; gap: 7px; margin-top: 1px; font-size: var(--fs-caption); color: var(--c-hint); white-space: nowrap; }
+#statusText { overflow: hidden; text-overflow: ellipsis; }
+.status .dot { position: relative; width: 7px; height: 7px; border-radius: 50%; background: var(--up); flex-shrink: 0; transition: background-color var(--dur-3); }
+.status .dot::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: inherit; animation: ping 2.2s var(--ease-out) infinite; }
+.status[data-state="loading"] .dot { background: var(--c-accent); }
+.status[data-state="stale"] .dot { background: var(--gold); }
+.status[data-state="offline"] .dot { background: var(--c-hint); }
+.status:not([data-state="live"]) .dot::after { animation: none; opacity: 0; }
+
+/* Refresh button + countdown ring */
+.refresh .ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+  pointer-events: none;
+}
+.refresh .ring circle {
+  fill: none;
+  stroke: var(--c-accent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 116.24;
+  stroke-dashoffset: 116.24;
+  opacity: 0.5;
+  transition: opacity var(--dur-2);
+}
+.refresh.counting .ring circle { animation: countdown var(--refresh-ms, 60s) linear forwards; animation-delay: var(--refresh-delay, 0ms); }
+.refresh.loading .ring circle { opacity: 0; }
+.refresh.loading .icon { animation: spin 0.75s linear infinite; }
+
+/* City card */
+.city {
+  padding: var(--sp-4) var(--sp-4) var(--sp-3);
+  background:
+    radial-gradient(120% 90% at var(--glow-x, 100%) 0%, var(--c-accent-soft), transparent 60%),
+    var(--c-surface);
+}
+[dir="ltr"] .city { --glow-x: 0%; }
+.city { transition: --glow-x 700ms var(--ease-out); }
+.city-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-1);
+}
+.city-name {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0;
+  font-size: var(--fs-headline);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.city-name::before {
+  content: "";
+  width: 4px;
+  height: 18px;
+  border-radius: 2px;
+  background: var(--c-accent);
+}
+.spread {
+  padding: 3px 10px;
+  border-radius: var(--r-pill);
+  background: var(--c-fill);
+  font-size: var(--fs-caption);
+  color: var(--c-hint);
+  white-space: nowrap;
+}
+.spread strong { color: var(--c-text); font-weight: 600; }
+
+.prices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin-inline: calc(var(--sp-2) * -1);
+}
+.price {
+  position: relative;
+  min-width: 0;
+  padding: var(--sp-2);
+  border-radius: var(--r-md);
+}
+.price:first-child { padding-inline-end: var(--sp-4); }
+.price + .price { padding-inline-start: var(--sp-4); }
+.price + .price::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  top: var(--sp-3);
+  bottom: var(--sp-3);
+  width: 1px;
+  background: var(--c-sep);
+}
+.price-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--fs-callout);
+  font-weight: 500;
+  color: var(--c-hint);
+}
+.price-label .star { transform: scale(0); transition: transform var(--dur-3) var(--ease-spring); }
+.price.best .price-label .star { transform: scale(1); }
+.price-value { margin: 1px 0 var(--sp-2); }
+.price-value .num {
+  display: inline-block;
+  font-size: var(--fs-price);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+}
+.price-sub {
+  margin-top: var(--sp-2);
+  font-size: 12px;
+  color: var(--c-hint);
+  white-space: nowrap;
+}
+
+/* Share */
+.share-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  width: 100%;
+  height: 52px;
+  border-radius: var(--r-lg);
+  background: var(--c-accent-soft);
+  color: var(--c-link);
+  font-size: var(--fs-body);
+  font-weight: 600;
+}
+.share-btn .icon { width: 18px; height: 18px; }
+
+/* Empty / error state */
+.empty { padding: var(--sp-8) var(--sp-5); text-align: center; }
+.empty-icon {
+  width: 60px;
+  height: 60px;
+  margin: 0 auto var(--sp-4);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--c-down-soft);
+  color: var(--down);
+}
+.empty-icon .icon { width: 28px; height: 28px; }
+.empty h2 { margin: 0 0 var(--sp-1); font-size: var(--fs-headline); font-weight: 600; }
+.empty p { margin: 0 0 var(--sp-5); font-size: var(--fs-callout); color: var(--c-hint); }
+
+/* Footer */
+.foot { padding-top: var(--sp-4); text-align: center; font-size: var(--fs-caption); line-height: 1.8; color: var(--c-hint); }
+.foot a { color: var(--c-link); font-weight: 500; text-decoration: none; }
+.legend { display: inline-flex; align-items: center; gap: 5px; }
+.legend .star { width: 12px; height: 12px; }
+
+/* Small phones */
+@media (max-width: 359px) {
+  :root { --gutter: 12px; }
+  .appbar, .brand { gap: var(--sp-2); }
+  .appbar-actions { gap: 6px; }
+  .icon-btn { width: 36px; height: 36px; }
+  .logo { width: 36px; height: 36px; border-radius: 11px; font-size: 18px; }
+  .brand h1 { font-size: var(--fs-headline); }
+  .city { padding-inline: var(--sp-3); }
+  .price:first-child { padding-inline-end: var(--sp-3); }
+  .price + .price { padding-inline-start: var(--sp-3); }
+  .price-sub [data-role="post"] { display: none; }
+}
+
+/* 5. Motion ---------------------------------------------------------------- */
+
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes countdown { to { stroke-dashoffset: 0; } }
+@keyframes shimmer { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+@keyframes ping { 0% { transform: scale(1); opacity: 0.55; } 80%, 100% { transform: scale(3); opacity: 0; } }
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } }
+@keyframes appear { from { opacity: 0; transform: translateY(4px); } }
+@keyframes flash-up { from { background-color: var(--c-up-soft); } }
+@keyframes flash-down { from { background-color: var(--c-down-soft); } }
+
+/* Theme switch: the new theme grows out of the toggle as a circle (View Transitions). */
+::view-transition-old(root),
+::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+
+/* Fallback when View Transitions aren't supported: a quick colour cross-fade. */
+.theme-fade,
+.theme-fade *:not(.sun-and-moon, .sun-and-moon *),
+.theme-fade *::before {
+  transition: background-color 350ms var(--ease-out), color 350ms var(--ease-out), border-color 350ms var(--ease-out), box-shadow 350ms var(--ease-out) !important;
+}
+
+.enter > * { animation: rise 600ms var(--ease-out) both; animation-delay: calc(var(--i, 0) * 70ms); }
+.appear { animation: appear var(--dur-3) var(--ease-out) both; }
+.flash-up { animation: flash-up 1.6s var(--ease-in); }
+.flash-down { animation: flash-down 1.6s var(--ease-in); }
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+  /* The countdown ring is a progress indicator, not decorative motion. */
+  .refresh.counting .ring circle { animation-duration: var(--refresh-ms, 60s) !important; }
+}

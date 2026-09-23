@@ -1,0 +1,10 @@
+{
+  "name": "dollarexchange",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-09-01",
+  // Files in ./public are served as-is; anything else (i.e. /api/rates) reaches the worker.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  }
+}

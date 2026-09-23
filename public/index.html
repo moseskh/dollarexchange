@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>بورصة الدولار</title>
+  <link rel="preload" href="/fonts/ibm-plex-sans-arabic-latin-700.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/ibm-plex-sans-arabic-arabic-600.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/fonts/fonts.css">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="app" id="app">
+    <header class="appbar">
+      <div class="brand">
+        <div class="logo" aria-hidden="true">$</div>
+        <div>
+          <h1 data-i18n="appName"></h1>
+          <div class="status" id="status" data-state="loading">
+            <span class="dot"></span><span id="statusText"></span>
+          </div>
+        </div>
+      </div>
+      <div class="appbar-actions">
+        <button class="icon-btn press theme-btn" id="themeBtn" type="button" data-i18n-label="theme" aria-pressed="false">
+          <svg class="sun-and-moon" viewBox="0 0 24 24" aria-hidden="true">
+            <mask id="moon-mask" class="moon">
+              <rect x="0" y="0" width="100%" height="100%" fill="white"/>
+              <circle cx="24" cy="10" r="6" fill="black"/>
+            </mask>
+            <circle class="sun" cx="12" cy="12" r="6" mask="url(#moon-mask)" fill="currentColor"/>
+            <g class="sun-beams" stroke="currentColor">
+              <line x1="12" y1="1" x2="12" y2="3"/>
+              <line x1="12" y1="21" x2="12" y2="23"/>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+              <line x1="1" y1="12" x2="3" y2="12"/>
+              <line x1="21" y1="12" x2="23" y2="12"/>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+            </g>
+          </svg>
+        </button>
+        <button class="icon-btn press" id="langBtn" type="button"></button>
+        <button class="icon-btn press refresh" id="refreshBtn" type="button" data-i18n-label="refresh">
+          <svg class="ring" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="18.5"/></svg>
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 12a8.5 8.5 0 1 1-2.5-6"/><path d="M20.5 4v5h-5"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="stack" id="content">
+      <button class="share-btn press" id="shareBtn" type="button" style="--i:3">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.2 3.3 2.9 10.4c-.8.3-.8 1.4 0 1.7l4.6 1.6 1.8 5.6c.2.7 1.1.9 1.6.4l2.6-2.5 4.9 3.6c.6.4 1.4.1 1.6-.6l3-15.5c.2-.9-.7-1.6-1.6-1.4Z"/><path d="m7.5 13.7 9.8-6.5"/></svg>
+        <span data-i18n="shareAll"></span>
+      </button>
+    </main>
+
+    <section class="card empty" id="errorView" hidden>
+      <div class="empty-icon">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 8.8a15 15 0 0 1 4.2-2.6M22 8.8A15 15 0 0 0 10.5 5.1M5 12.5a10 10 0 0 1 3.5-2M19 12.5a10 10 0 0 0-2-1.4M8.5 16a5 5 0 0 1 7 0M12 19.5h.01M3 3l18 18"/></svg>
+      </div>
+      <h2 data-i18n="errorTitle"></h2>
+      <p data-i18n="errorBody"></p>
+      <button class="btn-primary press" id="retryBtn" type="button" data-i18n="retry"></button>
+    </section>
+
+    <footer class="foot">
+      <div class="legend">
+        <svg class="star" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2.8 2.8 5.9 6.4.8-4.7 4.4 1.2 6.4L12 17.2l-5.7 3.1 1.2-6.4-4.7-4.4 6.4-.8Z"/></svg>
+        <span data-i18n="bestLegend"></span>
+      </div>
+      <div data-i18n="footnote"></div>
+      <div><span data-i18n="source"></span> <a class="ext-link" href="https://iraqborsa.com" target="_blank" rel="noopener">iraqborsa.com</a></div>
+    </footer>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
