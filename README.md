@@ -1,8 +1,8 @@
-# Borsa Mini App
+# Dollar Exchange
 
 A Telegram Mini App that shows the USD → IQD borsa rates (sell / buy) for Baghdad, Basra and Erbil, using data from [iraqborsa.com](https://iraqborsa.com).
 
-**Live:** https://dollarexchange.mosakh.workers.dev (Cloudflare Workers). To publish changes, run `npm run deploy`.
+**Live:** https://dollarexchange.mosakh.workers.dev. Every push to `main` deploys automatically.
 
 - **One card per city:** sell and buy for Baghdad, Basra and Erbil, each with the change since the previous price, the price of $100, and the buy/sell spread.
 - **Best rate:** ★ marks the cheapest place to buy dollars (lowest sell) and the best place to sell them (highest buy).
@@ -49,14 +49,9 @@ If `npm install` warns that `esbuild` and `workerd` install scripts weren't run,
 
 ## Deploy
 
-You need a free Cloudflare account.
+The app runs on Cloudflare Workers and deploys from GitHub through [Workers Builds](https://developers.cloudflare.com/workers/ci-cd/builds/): every push to `main` runs `npx wrangler deploy` on Cloudflare. Build status shows as a check on each commit.
 
-```sh
-npx wrangler login
-npm run deploy
-```
-
-The deploy prints your app URL, e.g. `https://dollarexchange.<your-subdomain>.workers.dev`.
+To set it up on a new Cloudflare account, create the Worker once (`npx wrangler login && npm run deploy`), then connect this repo under **Workers & Pages → dollarexchange → Settings → Build**.
 
 ## Connect it to Telegram
 
