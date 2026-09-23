@@ -53,14 +53,25 @@ The app runs on Cloudflare Workers and deploys from GitHub through [Workers Buil
 
 To set it up on a new Cloudflare account, create the Worker once (`npx wrangler login && npm run deploy`), then connect this repo under **Workers & Pages → dollarexchange → Settings → Build**.
 
-## Connect it to Telegram
+## Telegram
 
-1. In Telegram, open [@BotFather](https://t.me/BotFather) and send `/newbot`. Pick a name and a username.
-2. Send `/mybots`, choose your bot, then **Bot Settings → Menu Button → Configure menu button**.
-3. Send your `workers.dev` URL, then a button label (e.g. `الأسعار`).
-4. Open a chat with your bot and tap the menu button. The app opens inside Telegram.
+The app runs as the Main Mini App of [@IraqDollarExchangeBot](https://t.me/IraqDollarExchangeBot). Direct link: https://t.me/IraqDollarExchangeBot?startapp
 
-Optional: send `/newapp` to BotFather to create a direct link (`t.me/<bot>/<app>`) you can share anywhere.
+- **Mini App:** in @BotFather, `/mybots` → the bot → **Bot Settings → Configure Mini App** points at the Worker URL.
+- **Bot replies:** the Worker answers the bot at `/telegram/webhook`. Tapping **Start**, or sending any message, gets a welcome with an "Open the app" button, and the chat's menu button opens the app.
+
+The bot needs two secrets on the Worker (**Workers & Pages → dollarexchange → Settings → Variables and Secrets**, type *Secret*). They're never stored in the repo:
+
+| Secret | Value |
+| --- | --- |
+| `BOT_TOKEN` | The token from @BotFather |
+| `WEBHOOK_SECRET` | Any random string (letters, digits, `_`, `-`) |
+
+After setting them, register the webhook once:
+
+```sh
+curl -X POST https://dollarexchange.mosakh.workers.dev/telegram/setup -H "Authorization: Bearer <WEBHOOK_SECRET>"
+```
 
 ## Customising
 
