@@ -506,6 +506,92 @@ svg { display: block; flex-shrink: 0; }
   line-height: 1.7;
 }
 .disclaimer strong { color: var(--c-text); font-weight: 600; }
+.link-btn { display: inline; color: var(--c-link); font-weight: 600; font-size: inherit; line-height: inherit; }
+
+/* Bottom sheet */
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.42);
+  opacity: 0;
+  transition: opacity var(--dur-3) var(--ease-out);
+}
+.sheet-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 560px;
+  max-height: 86vh;
+  padding-bottom: calc(var(--sp-3) + var(--tg-safe-area-inset-bottom, 0px));
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  background: var(--c-surface);
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.22);
+  transform: translateY(100%);
+  transition: transform var(--dur-3) var(--ease-out);
+}
+.sheet.open .sheet-backdrop { opacity: 1; }
+.sheet.open .sheet-panel { transform: none; }
+.sheet-grabber { width: 36px; height: 5px; margin: var(--sp-2) auto 0; border-radius: var(--r-pill); background: var(--c-fill-strong); }
+.sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-5);
+  border-bottom: 1px solid var(--c-sep);
+}
+.sheet-head h2 { margin: 0; font-size: var(--fs-headline); font-weight: 700; }
+.sheet-close {
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--c-fill);
+  color: var(--c-hint);
+}
+.sheet-close .icon { width: 16px; height: 16px; }
+.sheet-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--sp-4) var(--sp-5) var(--sp-2);
+}
+
+.legal-section + .legal-section { margin-top: var(--sp-5); }
+.legal-section h3 {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-1);
+  font-size: var(--fs-callout);
+  font-weight: 600;
+}
+.legal-n {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--c-accent-soft);
+  color: var(--c-link);
+  font-size: var(--fs-micro);
+  font-weight: 700;
+}
+.legal-section p,
+.legal-section li { margin: 0; font-size: var(--fs-callout); line-height: 1.8; color: var(--c-hint); }
+.legal-section ul { margin: var(--sp-1) 0 0; padding-inline-start: 1.2em; }
+.legal-section li + li { margin-top: var(--sp-1); }
 
 /* Small phones */
 @media (max-width: 359px) {

@@ -75,8 +75,25 @@
       </div>
       <div data-i18n="footnote"></div>
       <div><span data-i18n="source"></span> <a class="ext-link" href="https://iraqborsa.com" target="_blank" rel="noopener">iraqborsa.com</a></div>
-      <p class="disclaimer"><strong data-i18n="disclaimerLabel"></strong> <span data-i18n="disclaimer"></span></p>
+      <p class="disclaimer">
+        <strong data-i18n="disclaimerLabel"></strong> <span data-i18n="disclaimer"></span>
+        <button class="link-btn" id="legalBtn" type="button" data-i18n="legalOpen"></button>
+      </p>
     </footer>
+  </div>
+
+  <div class="sheet" id="legalSheet" hidden>
+    <div class="sheet-backdrop" data-close></div>
+    <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="legalTitle">
+      <div class="sheet-grabber" aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 id="legalTitle" data-i18n="legalTitle"></h2>
+        <button class="sheet-close press" type="button" data-close data-i18n-label="close">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </header>
+      <div class="sheet-body" id="legalBody"></div>
+    </section>
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>

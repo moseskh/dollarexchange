@@ -43,6 +43,31 @@ const STR = {
     source: "المصدر:",
     disclaimerLabel: "تنبيه:",
     disclaimer: "يعرض هذا التطبيق الأسعار المنشورة على موقع iraqborsa.com العام للاطلاع فقط، ولا يعمل في تداول العملات أو صرفها.",
+    legalOpen: "اقرأ إخلاء المسؤولية الكامل",
+    legalTitle: "إخلاء مسؤولية قانوني وتقني",
+    close: "إغلاق",
+    legal: [
+      {
+        title: "طبيعة الخدمة",
+        text: "هذا التطبيق أداة برمجية رقمية مؤتمتة (API Aggregator) تجمع وتنقل المؤشرات المتداولة في السوق تلقائياً دون أي تدخل بشري. التطبيق ليس طرفاً مصرفياً، ولا يمثل أي بورصة (الكفاح، الحارثية، أو غيرها)، ولا يعمل كشركة صرافة أو وسيط مالي أو جهة تسعير.",
+      },
+      {
+        title: "نفي تحريك الأسعار والمضاربة",
+        text: "تنفي إدارة التطبيق نفياً قاطعاً قيامها بـ:",
+        items: [
+          "صياغة أو تثبيت أو توجيه أو تحريك أي من الأسعار المعروضة.",
+          "الدعوة إلى الشراء أو البيع أو المضاربة أو تداول العملات خارج الأطر المصرفية الرسمية المقرة من البنك المركزي العراقي.",
+        ],
+      },
+      {
+        title: "مصدر البيانات ودقتها",
+        text: "جميع الأرقام المعروضة تُجلب آلياً وبصورة حية من موقع iraqborsa.com العام. لا تضمن الإدارة مطابقة هذه الأسعار للواقع اللحظي، ولا تتحمل أي مسؤولية ناتجة عن التذبذبات السريعة أو أخطاء المصدر أو تأخر وصول التحديثات.",
+      },
+      {
+        title: "حدود المسؤولية وإسقاط المطالبات",
+        text: "يُقر المستخدم بأن اعتماده على أي رقم أو معلومة معروضة هو قرار شخصي يتحمل مسؤوليته كاملة، ويُسقط حقه في أي مطالبة تجاه إدارة التطبيق عن أي خسارة أو ضرر مباشر أو غير مباشر ناتج عن استخدامه.",
+      },
+    ],
     errorTitle: "تعذّر جلب الأسعار",
     errorBody: "تحقق من اتصالك بالإنترنت ثم حاول مجدداً",
     retry: "إعادة المحاولة",
@@ -76,6 +101,31 @@ const STR = {
     source: "Source:",
     disclaimerLabel: "Disclaimer:",
     disclaimer: "This app only shows prices published on the public website iraqborsa.com, for information only. It doesn't trade or exchange currencies.",
+    legalOpen: "Read the full disclaimer",
+    legalTitle: "Legal and technical disclaimer",
+    close: "Close",
+    legal: [
+      {
+        title: "Nature of the service",
+        text: "This app is an automated software tool (API aggregator) that collects and relays market indicators automatically, with no human involvement. It is not a bank, does not represent any exchange (Al-Kifah, Al-Harithiya or others), and is not a currency exchange, financial broker or price-setting body.",
+      },
+      {
+        title: "No price-setting or speculation",
+        text: "The app's operators firmly deny:",
+        items: [
+          "Creating, fixing, steering or moving any of the prices shown.",
+          "Encouraging buying, selling, speculating or trading currencies outside the official banking channels approved by the Central Bank of Iraq.",
+        ],
+      },
+      {
+        title: "Data source and accuracy",
+        text: "All figures are fetched automatically and live from the public website iraqborsa.com. The operators don't guarantee that these prices match the market at any given moment, and accept no liability for rapid fluctuations, errors at the source, or delayed updates.",
+      },
+      {
+        title: "Limitation of liability",
+        text: "By using the app, you acknowledge that relying on any figure or information shown is your own decision and responsibility, and you waive any claim against the app's operators for any direct or indirect loss or damage arising from its use.",
+      },
+    ],
     errorTitle: "Couldn't load rates",
     errorBody: "Check your internet connection and try again",
     retry: "Try again",
@@ -213,6 +263,9 @@ const els = {
   errorView: $("errorView"),
   retryBtn: $("retryBtn"),
   toast: $("toast"),
+  legalBtn: $("legalBtn"),
+  legalSheet: $("legalSheet"),
+  legalBody: $("legalBody"),
 };
 
 function buildCards() {
@@ -258,6 +311,12 @@ function applyLanguage() {
 
   els.langBtn.textContent = s.langToggle;
   els.langBtn.setAttribute("aria-label", s.langLabel);
+  els.legalBody.innerHTML = s.legal.map((section, i) => `
+    <section class="legal-section">
+      <h3><span class="legal-n num">${i + 1}</span>${section.title}</h3>
+      <p>${section.text}</p>
+      ${section.items ? `<ul>${section.items.map((item) => `<li>${item}</li>`).join("")}</ul>` : ""}
+    </section>`).join("");
   for (const c of CITIES) {
     const card = els.cardEls[c.key];
     card.name.textContent = cityName(c.key);
@@ -472,6 +531,39 @@ function toast(message) {
   toastTimer = setTimeout(() => els.toast.classList.remove("show"), 2200);
 }
 
+/* ---------- Disclaimer sheet ---------- */
+
+const SHEET_MS = 420;
+const hasBackButton = inTelegram && tg.isVersionAtLeast("6.1");
+let sheetTimer = 0;
+
+function openLegal() {
+  haptic.tap();
+  const sheet = els.legalSheet;
+  clearTimeout(sheetTimer);
+  sheet.hidden = false;
+  els.legalBody.scrollTop = 0;
+  document.body.style.overflow = "hidden";
+  // Let the closed position render first so the slide-up transition runs.
+  requestAnimationFrame(() => requestAnimationFrame(() => sheet.classList.add("open")));
+  if (hasBackButton) {
+    tg.BackButton.onClick(closeLegal);
+    tg.BackButton.show();
+  }
+}
+
+function closeLegal() {
+  const sheet = els.legalSheet;
+  if (sheet.hidden || !sheet.classList.contains("open")) return;
+  sheet.classList.remove("open");
+  document.body.style.overflow = "";
+  if (hasBackButton) {
+    tg.BackButton.offClick(closeLegal);
+    tg.BackButton.hide();
+  }
+  sheetTimer = setTimeout(() => { sheet.hidden = true; }, reducedMotion.matches ? 0 : SHEET_MS);
+}
+
 /* ---------- Language & theme ---------- */
 
 // Every block shrinks away, the layout mirrors while nothing is visible, then the blocks
@@ -592,6 +684,13 @@ function bindEvents() {
   els.langBtn.addEventListener("click", toggleLanguage);
   els.themeBtn.addEventListener("click", toggleTheme);
   els.shareBtn.addEventListener("click", share);
+  els.legalBtn.addEventListener("click", openLegal);
+  els.legalSheet.addEventListener("click", (e) => {
+    if (e.target.closest("[data-close]")) closeLegal();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeLegal();
+  });
 
   // Inside Telegram, external links open in the phone's browser.
   document.addEventListener("click", (e) => {
