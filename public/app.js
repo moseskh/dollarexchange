@@ -445,8 +445,16 @@ function buildCards() {
         <div class="price"><div class="price-label" data-i18n="buy"></div><div class="price-value"><span class="num" data-role="buy"></span></div></div>
       </div>
       <div class="market-stats">
-        <div><span data-i18n="marketSpread"></span><strong class="num" data-role="spread"></strong></div>
-        <div><span data-i18n="gapOfficial"></span><strong class="num" data-role="gap"></strong></div>
+        <div class="stat-row">
+          <span data-i18n="marketSpread"></span>
+          <strong class="stat-amount"><span class="num" data-role="spread"></span> <span data-i18n="iqd"></span></strong>
+          <strong class="stat-pct num" data-role="spreadPct"></strong>
+        </div>
+        <div class="stat-row">
+          <span data-i18n="gapOfficial"></span>
+          <strong class="stat-amount"><span class="num" data-role="gap"></span> <span data-i18n="iqd"></span></strong>
+          <strong class="stat-pct num" data-role="gapPct"></strong>
+        </div>
       </div>
       <div class="market-updated" data-role="updated"></div>
     </section>`;
@@ -456,7 +464,7 @@ function buildCards() {
   els.market = {
     card: marketCard,
     main: marketCard.querySelector(".market-main"),
-    ...Object.fromEntries(["mid", "per100", "pre", "post", "change", "sell", "buy", "spread", "gap", "updated"].map((r) => [r, mq(r)])),
+    ...Object.fromEntries(["mid", "per100", "pre", "post", "change", "sell", "buy", "spread", "spreadPct", "gap", "gapPct", "updated"].map((r) => [r, mq(r)])),
   };
 
   els.cardEls = Object.fromEntries(CITIES.map((c) => {
@@ -612,7 +620,7 @@ function renderMarket({ animate = false } = {}) {
   r.pre.textContent = s.per100[0];
   r.post.textContent = s.per100[1];
   if (!m) {
-    for (const [el, placeholder] of [[r.mid, "0,000.00"], [r.per100, "000,000"], [r.sell, "0,000.00"], [r.buy, "0,000.00"], [r.spread, "0.00"], [r.gap, "00.0%"]]) {
+    for (const [el, placeholder] of [[r.mid, "0,000.00"], [r.per100, "000,000"], [r.sell, "0,000.00"], [r.buy, "0,000.00"], [r.spread, "0.00"], [r.spreadPct, "0.00%"], [r.gap, "000.00"], [r.gapPct, "00.00%"]]) {
       setPlaceholder(el, placeholder, false);
     }
     r.change.className = "delta sk";
@@ -631,12 +639,14 @@ function renderMarket({ animate = false } = {}) {
   show(r.per100, Math.round(m.mid * 100), { format: fmtInt.format, step: 1 });
   show(r.sell, m.sell);
   show(r.buy, m.buy);
-  r.spread.classList.remove("sk");
-  r.spread.textContent = m.spread == null ? "—" : `${fmt.format(m.spread)}${m.spreadPct == null ? "" : ` · ${m.spreadPct.toFixed(2)}%`}`;
-  r.gap.classList.remove("sk");
-  r.gap.textContent = m.gapPct == null
-    ? "—"
-    : `${m.gapPct >= 0 ? "+" : "−"}${Math.abs(m.gapPct).toFixed(1)}%${m.gapAbs == null ? "" : ` · ${fmtInt.format(Math.round(Math.abs(m.gapAbs)))} ${s.iqd}`}`;
+  // Both stat rows read the same way: amount + currency, then the percentage.
+  const pctText = (v, signed) => (v == null ? "—" : `${signed ? (v >= 0 ? "+" : "−") : ""}${Math.abs(v).toFixed(2)}%`);
+  show(r.spread, m.spread);
+  show(r.gap, m.gapAbs == null ? null : Math.abs(m.gapAbs));
+  for (const [el, text] of [[r.spreadPct, pctText(m.spreadPct, false)], [r.gapPct, pctText(m.gapPct, true)]]) {
+    el.classList.remove("sk");
+    el.textContent = text;
+  }
 
   const dir = Math.sign(m.change || 0);
   r.change.className = `delta ${dir > 0 ? "up" : dir < 0 ? "down" : "flat"}`;
