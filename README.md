@@ -5,6 +5,7 @@ A Telegram Mini App that shows the USD → IQD borsa rates (sell / buy) for Bagh
 **Live:** https://dollarexchange.mosakh.workers.dev. Every push to `main` deploys automatically.
 
 - **Two tabs:** Dollar and Gold, with the last one used remembered.
+- **Iraq market average:** a second source, [usdiqd.com](https://usdiqd.com), below the city cards. It shows the market middle price and its change, buy/sell and spread, the CBI official rate, and the gap from it. It updates every few minutes and shows when the source last updated. usdiqd.com's own site shows only the middle price. Its `buy` is the higher number, so the Worker maps the sides by value: the higher price is بيع (sell), as on the city cards.
 - **One card per city:** sell and buy for Baghdad, Basra and Erbil, each with the change since the previous price, the price of $100, and the buy/sell spread.
 - **Gold:** 24, 21 and 18 karat per mithqal (5 g), in dinars and dollars. Calculated from the world gold price ([gold-api.com](https://gold-api.com)) and converted at Baghdad's dollar sell rate, so gold shops may charge more.
 - **Best rate:** ★ marks the cheapest place to buy dollars (lowest sell) and the best place to sell them (highest buy).
@@ -24,7 +25,7 @@ A Telegram Mini App that shows the USD → IQD borsa rates (sell / buy) for Bagh
 | `public/fonts/` | IBM Plex Sans Arabic, self-hosted (SIL Open Font License, see `OFL.txt`) |
 | `public/_headers` | Caches font files for a year |
 | `public/bot/` | Thumbnails for the bot's inline results |
-| `src/worker.js` | Cloudflare Worker entry: serves the page, `GET /api/rates` (dollar), `GET /api/gold` (world gold price), the bot webhook, and the 5-minute cron |
+| `src/worker.js` | Cloudflare Worker entry: serves the page, `GET /api/rates` (city dollar rates), `GET /api/market` (Iraq market average), `GET /api/gold` (world gold price), the bot webhook, and the 5-minute cron |
 | `src/rates.js` | Fetches and caches the upstream prices; gold-per-mithqal math |
 | `src/bot.js` | The Telegram bot: commands, action buttons, inline mode, groups, summaries and alerts |
 | `src/texts.js` | Everything the bot says (Arabic and English), its profile and command menus |

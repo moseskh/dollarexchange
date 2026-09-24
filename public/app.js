@@ -4,11 +4,13 @@
 
 const API_URL = "/api/rates";
 const GOLD_API_URL = "/api/gold";
+const MARKET_API_URL = "/api/market";
 const REFRESH_MS = 60_000;
 const STALE_MS = 3 * 60_000;
 const CACHE_MAX_AGE_MS = 24 * 60 * 60_000;
 const CACHE_KEY = "borsa:last";
 const GOLD_CACHE_KEY = "borsa:gold";
+const MARKET_CACHE_KEY = "borsa:market";
 const PREFS_KEY = "borsa:prefs";
 // Link included when sharing rates; opens the Mini App directly in Telegram.
 // The start parameter lets analytics count opens that came from a share.
@@ -58,6 +60,12 @@ const STR = {
     shareAll: "مشاركة الأسعار",
     bestLegend: "أفضل سعر بين المدن",
     footnote: "الأسعار بالدينار العراقي لكل 1 دولار أمريكي",
+    marketTitle: "متوسط السوق في العراق",
+    marketSpread: "الفرق بين البيع والشراء",
+    officialRate: "السعر الرسمي (البنك المركزي)",
+    gapOfficial: "الفرق عن السعر الرسمي",
+    marketUpdated: "تحديث المصدر",
+    shareMarket: (mid, official, gap) => `متوسط السوق: ${mid} · الرسمي ${official}${gap ? ` (${gap})` : ""}`,
     goldFootnote: "السعر العالمي للذهب لكل مثقال (5 غرامات)، محوّلاً إلى الدينار بسعر بيع الدولار في بغداد. قد يختلف عن أسعار محلات الذهب.",
     source: "المصدر:",
     disclaimerLabel: "تنبيه:",
@@ -80,7 +88,7 @@ const STR = {
       },
       {
         title: "مصدر البيانات ودقتها",
-        text: "أسعار الدولار تُجلب آلياً وبصورة حية من موقع iraqborsa.com العام، وأسعار الذهب محسوبة من السعر العالمي (gold-api.com) ومحوّلة بسعر صرف الدولار، وقد تختلف عن أسعار السوق المحلي ومحلات الذهب التي تضيف أجور الصياغة وهامش الربح. لا تضمن الإدارة مطابقة هذه الأسعار للواقع اللحظي، ولا تتحمل أي مسؤولية ناتجة عن التذبذبات السريعة أو أخطاء المصدر أو تأخر وصول التحديثات.",
+        text: "أسعار الدولار في المدن تُجلب آلياً وبصورة حية من موقع iraqborsa.com العام، ومتوسط السوق والسعر الرسمي من موقع usdiqd.com، وأسعار الذهب محسوبة من السعر العالمي (gold-api.com) ومحوّلة بسعر صرف الدولار، وقد تختلف عن أسعار السوق المحلي ومحلات الذهب التي تضيف أجور الصياغة وهامش الربح. لا تضمن الإدارة مطابقة هذه الأسعار للواقع اللحظي، ولا تتحمل أي مسؤولية ناتجة عن التذبذبات السريعة أو أخطاء المصدر أو تأخر وصول التحديثات.",
       },
       {
         title: "حدود المسؤولية وإسقاط المطالبات",
@@ -132,6 +140,12 @@ const STR = {
     shareAll: "Share rates",
     bestLegend: "Best rate across cities",
     footnote: "Rates in Iraqi dinar per 1 US dollar",
+    marketTitle: "Iraq market average",
+    marketSpread: "Buy/sell spread",
+    officialRate: "Official rate (CBI)",
+    gapOfficial: "Gap vs official rate",
+    marketUpdated: "Source updated",
+    shareMarket: (mid, official, gap) => `Market average: ${mid} · Official ${official}${gap ? ` (${gap})` : ""}`,
     goldFootnote: "World gold price per mithqal (5 g), converted to dinars at Baghdad's dollar sell rate. Gold shops may charge more.",
     source: "Source:",
     disclaimerLabel: "Disclaimer:",
@@ -154,7 +168,7 @@ const STR = {
       },
       {
         title: "Data source and accuracy",
-        text: "Dollar rates are fetched automatically and live from the public website iraqborsa.com. Gold prices are calculated from the world price (gold-api.com) and converted at the dollar rate, so they may differ from local market and gold shop prices, which add making charges and a margin. The operators don't guarantee that these prices match the market at any given moment, and accept no liability for rapid fluctuations, errors at the source, or delayed updates.",
+        text: "City dollar rates are fetched automatically and live from the public website iraqborsa.com, and the market average and official rate from usdiqd.com. Gold prices are calculated from the world price (gold-api.com) and converted at the dollar rate, so they may differ from local market and gold shop prices, which add making charges and a margin. The operators don't guarantee that these prices match the market at any given moment, and accept no liability for rapid fluctuations, errors at the source, or delayed updates.",
       },
       {
         title: "Limitation of liability",
@@ -247,6 +261,8 @@ const state = {
   updatedAt: 0,
   failed: false,
   gold: null, // { price: USD per troy ounce, updatedAt }
+  market: null, // Iraq market average from usdiqd.com (see src/rates.js fetchMarket)
+  marketFailed: false,
   goldAt: 0,
   goldFailed: false,
   loading: false,
@@ -390,6 +406,7 @@ const els = {
   legend: $("legend"),
   footnote: $("footnote"),
   goldSource: $("goldSource"),
+  marketSource: $("marketSource"),
   toast: $("toast"),
   legalBtn: $("legalBtn"),
   legalSheet: $("legalSheet"),
@@ -412,7 +429,38 @@ function buildCards() {
             <div class="price-sub"><span data-role="pre"></span><span class="num" data-role="per100"></span><span data-role="post"></span></div>
           </div>`).join("")}
       </div>
-    </section>`).join("");
+    </section>`).join("") + `
+    <section class="card market-card" id="marketCard" style="--i:4">
+      <div class="city-head">
+        <h2 class="city-name" data-i18n="marketTitle"></h2>
+        <a class="spread source-pill ext-link" href="https://usdiqd.com" target="_blank" rel="noopener">usdiqd.com</a>
+      </div>
+      <div class="market-main">
+        <div>
+          <div class="price-value"><span class="num" data-role="mid"></span> <span class="unit" data-i18n="iqd"></span></div>
+          <div class="price-sub"><span data-role="pre"></span><span class="num" data-role="per100"></span><span data-role="post"></span></div>
+        </div>
+        <div class="delta" data-role="change"></div>
+      </div>
+      <div class="prices market-sides">
+        <div class="price"><div class="price-label" data-i18n="sell"></div><div class="price-value"><span class="num" data-role="sell"></span></div></div>
+        <div class="price"><div class="price-label" data-i18n="buy"></div><div class="price-value"><span class="num" data-role="buy"></span></div></div>
+      </div>
+      <div class="market-stats">
+        <div><span data-i18n="marketSpread"></span><strong class="num" data-role="spread"></strong></div>
+        <div><span data-i18n="officialRate"></span><strong class="num" data-role="official"></strong></div>
+        <div><span data-i18n="gapOfficial"></span><strong class="num" data-role="gap"></strong></div>
+      </div>
+      <div class="market-updated" data-role="updated"></div>
+    </section>`;
+
+  const marketCard = els.usdPanel.querySelector("#marketCard");
+  const mq = (r) => marketCard.querySelector(`[data-role="${r}"]`);
+  els.market = {
+    card: marketCard,
+    main: marketCard.querySelector(".market-main"),
+    ...Object.fromEntries(["mid", "per100", "pre", "post", "change", "sell", "buy", "spread", "official", "gap", "updated"].map((r) => [r, mq(r)])),
+  };
 
   els.cardEls = Object.fromEntries(CITIES.map((c) => {
     const card = els.usdPanel.querySelector(`[data-city="${c.key}"]`);
@@ -558,6 +606,57 @@ function renderGold({ animate = false } = {}) {
 }
 
 // Which panel, footer notes and share state go with the current tab.
+function renderMarket({ animate = false } = {}) {
+  const s = t();
+  const m = state.market;
+  const r = els.market;
+  // A supplementary source: hide the card rather than show an error when it's down.
+  r.card.hidden = !m && state.marketFailed;
+  r.pre.textContent = s.per100[0];
+  r.post.textContent = s.per100[1];
+  if (!m) {
+    for (const [el, placeholder] of [[r.mid, "0,000.00"], [r.per100, "000,000"], [r.sell, "0,000.00"], [r.buy, "0,000.00"], [r.spread, "0.00"], [r.official, "0,000"], [r.gap, "00.0%"]]) {
+      setPlaceholder(el, placeholder, false);
+    }
+    r.change.className = "delta sk";
+    r.change.innerHTML = "<span>00 · 0.00%</span>";
+    r.updated.textContent = "";
+    return;
+  }
+
+  const before = r.mid._value;
+  const show = (el, value, opts = {}) => {
+    if (value == null) return setPlaceholder(el, "—", true);
+    el.classList.remove("sk");
+    setNumber(el, value, { animate, step: 0.01, ...opts });
+  };
+  show(r.mid, m.mid);
+  show(r.per100, Math.round(m.mid * 100), { format: fmtInt.format, step: 1 });
+  show(r.sell, m.sell);
+  show(r.buy, m.buy);
+  show(r.official, m.official);
+  r.spread.classList.remove("sk");
+  r.spread.textContent = m.spread == null ? "—" : `${fmt.format(m.spread)}${m.spreadPct == null ? "" : ` · ${m.spreadPct.toFixed(2)}%`}`;
+  r.gap.classList.remove("sk");
+  r.gap.textContent = m.gapPct == null
+    ? "—"
+    : `${m.gapPct >= 0 ? "+" : "−"}${Math.abs(m.gapPct).toFixed(1)}%${m.gapAbs == null ? "" : ` · ${fmtInt.format(Math.round(Math.abs(m.gapAbs)))} ${s.iqd}`}`;
+
+  const dir = Math.sign(m.change || 0);
+  r.change.className = `delta ${dir > 0 ? "up" : dir < 0 ? "down" : "flat"}`;
+  r.change.innerHTML = dir
+    ? `${arrow(dir)}<span class="num">${fmt.format(Math.abs(m.change))}</span><span class="d-sep">·</span><span class="num">${Math.abs(m.changePct || 0).toFixed(2)}%</span>`
+    : `<span>${s.unchanged}</span>`;
+  renderMarketUpdated();
+  if (animate && before != null && before !== m.mid) restartAnimation(r.main, m.mid > before ? "flash-up" : "flash-down");
+}
+
+// The source's own timestamp, so "updated" means the market price, not our fetch.
+function renderMarketUpdated() {
+  const at = Date.parse(state.market?.updatedAt || "");
+  els.market.updated.textContent = Number.isFinite(at) ? `🕐 ${t().marketUpdated} ${relativeTime(at)}` : "";
+}
+
 function applyTab() {
   const gold = isGoldTab();
   const usdDown = !state.data && state.failed;
@@ -568,6 +667,7 @@ function applyTab() {
   els.errorView.hidden = gold || !usdDown;
   els.legend.hidden = gold;
   els.goldSource.hidden = !gold;
+  els.marketSource.hidden = gold;
   els.footnote.textContent = gold ? t().goldFootnote : t().footnote;
   els.shareBtn.disabled = gold ? !state.gold : !state.data;
 }
@@ -627,6 +727,7 @@ function relativeTime(ts) {
 
 function renderAll(opts) {
   renderCards(opts);
+  renderMarket(opts);
   renderGold(opts);
   applyTab();
   renderStatus();
@@ -662,8 +763,8 @@ async function load({ manual = false } = {}) {
   els.refreshBtn.classList.remove("counting");
   renderStatus();
 
-  // Dollar and gold load independently: one source failing doesn't blank the other tab.
-  const [usd, gold] = await Promise.allSettled([getJSON(API_URL), getJSON(GOLD_API_URL)]);
+  // The sources load independently: one failing doesn't blank the others.
+  const [usd, gold, market] = await Promise.allSettled([getJSON(API_URL), getJSON(GOLD_API_URL), getJSON(MARKET_API_URL)]);
   if (manual) await sleep(600);
   const previous = state.data;
   const hadGold = Boolean(state.gold);
@@ -686,6 +787,15 @@ async function load({ manual = false } = {}) {
   } else {
     console.error("Failed to load gold:", gold.reason || "unexpected response");
     state.goldFailed = true;
+  }
+
+  if (market.status === "fulfilled" && Number(market.value.mid) > 0) {
+    state.market = market.value;
+    state.marketFailed = false;
+    writeJSON(MARKET_CACHE_KEY, { market: state.market, t: Date.now() });
+  } else {
+    console.error("Failed to load market average:", market.reason || "unexpected response");
+    state.marketFailed = true;
   }
 
   if (!state.failed || !state.goldFailed) state.offline = false;
@@ -752,6 +862,11 @@ function shareText() {
   if (!state.data) return null;
   const lines = CITIES.map((c) =>
     s.shareLine(cityName(c.key), fmt.format(rateOf(c.key, "sell")), fmt.format(rateOf(c.key, "buy"))));
+  const m = state.market;
+  if (m) {
+    const gap = m.gapPct == null ? "" : `${m.gapPct >= 0 ? "+" : "−"}${Math.abs(m.gapPct).toFixed(1)}%`;
+    lines.push("", s.shareMarket(fmt.format(m.mid), fmt.format(m.official), gap));
+  }
   return `${s.shareTitle}\n\n${lines.join("\n")}`;
 }
 
@@ -861,7 +976,16 @@ function contentRows(tab) {
     ];
   }
   if (!els.errorView.hidden) return [[els.errorView]];
-  return qAll(".city").map((card) => qAll(".city-head, .price", card));
+  const rows = qAll(".city").map((card) => qAll(".city-head, .price", card));
+  if (!els.market.card.hidden) {
+    rows.push(
+      qAll("#marketCard .city-head"),
+      qAll("#marketCard .market-main"),
+      qAll("#marketCard .market-sides .price"),
+      qAll("#marketCard .market-stats, #marketCard .market-updated"),
+    );
+  }
+  return rows;
 }
 
 function langPopRows() {
@@ -1018,7 +1142,10 @@ function bindEvents() {
     renderStatus();
   });
 
-  setInterval(renderStatus, 5_000);
+  setInterval(() => {
+    renderStatus();
+    renderMarketUpdated();
+  }, 5_000);
 
   if (inTelegram) {
     tg.onEvent("themeChanged", applyScheme);
@@ -1040,6 +1167,8 @@ function init() {
     state.data = cached.data;
     state.updatedAt = cached.t;
   }
+  const cachedMarket = readJSON(MARKET_CACHE_KEY);
+  if (cachedMarket?.market && Date.now() - cachedMarket.t < CACHE_MAX_AGE_MS) state.market = cachedMarket.market;
   const cachedGold = readJSON(GOLD_CACHE_KEY);
   if (cachedGold?.gold && Date.now() - cachedGold.t < CACHE_MAX_AGE_MS) {
     state.gold = cachedGold.gold;
