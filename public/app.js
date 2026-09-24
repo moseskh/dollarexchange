@@ -62,10 +62,9 @@ const STR = {
     footnote: "الأسعار بالدينار العراقي لكل 1 دولار أمريكي",
     marketTitle: "متوسط السوق في العراق",
     marketSpread: "الفرق بين البيع والشراء",
-    officialRate: "السعر الرسمي (البنك المركزي)",
     gapOfficial: "الفرق عن السعر الرسمي",
     marketUpdated: "تحديث المصدر",
-    shareMarket: (mid, official, gap) => `متوسط السوق: ${mid} · الرسمي ${official}${gap ? ` (${gap})` : ""}`,
+    shareMarket: (mid, gap) => `متوسط السوق: ${mid}${gap ? ` · ${gap} عن السعر الرسمي` : ""}`,
     goldFootnote: "السعر العالمي للذهب لكل مثقال (5 غرامات)، محوّلاً إلى الدينار بسعر بيع الدولار في بغداد. قد يختلف عن أسعار محلات الذهب.",
     source: "المصدر:",
     disclaimerLabel: "تنبيه:",
@@ -88,7 +87,7 @@ const STR = {
       },
       {
         title: "مصدر البيانات ودقتها",
-        text: "أسعار الدولار في المدن تُجلب آلياً وبصورة حية من موقع iraqborsa.com العام، ومتوسط السوق والسعر الرسمي من موقع usdiqd.com، وأسعار الذهب محسوبة من السعر العالمي (gold-api.com) ومحوّلة بسعر صرف الدولار، وقد تختلف عن أسعار السوق المحلي ومحلات الذهب التي تضيف أجور الصياغة وهامش الربح. لا تضمن الإدارة مطابقة هذه الأسعار للواقع اللحظي، ولا تتحمل أي مسؤولية ناتجة عن التذبذبات السريعة أو أخطاء المصدر أو تأخر وصول التحديثات.",
+        text: "أسعار الدولار في المدن تُجلب آلياً وبصورة حية من موقع iraqborsa.com العام، ومتوسط السوق من موقع usdiqd.com، وأسعار الذهب محسوبة من السعر العالمي (gold-api.com) ومحوّلة بسعر صرف الدولار، وقد تختلف عن أسعار السوق المحلي ومحلات الذهب التي تضيف أجور الصياغة وهامش الربح. لا تضمن الإدارة مطابقة هذه الأسعار للواقع اللحظي، ولا تتحمل أي مسؤولية ناتجة عن التذبذبات السريعة أو أخطاء المصدر أو تأخر وصول التحديثات.",
       },
       {
         title: "حدود المسؤولية وإسقاط المطالبات",
@@ -142,10 +141,9 @@ const STR = {
     footnote: "Rates in Iraqi dinar per 1 US dollar",
     marketTitle: "Iraq market average",
     marketSpread: "Buy/sell spread",
-    officialRate: "Official rate (CBI)",
     gapOfficial: "Gap vs official rate",
     marketUpdated: "Source updated",
-    shareMarket: (mid, official, gap) => `Market average: ${mid} · Official ${official}${gap ? ` (${gap})` : ""}`,
+    shareMarket: (mid, gap) => `Market average: ${mid}${gap ? ` · ${gap} vs the official rate` : ""}`,
     goldFootnote: "World gold price per mithqal (5 g), converted to dinars at Baghdad's dollar sell rate. Gold shops may charge more.",
     source: "Source:",
     disclaimerLabel: "Disclaimer:",
@@ -168,7 +166,7 @@ const STR = {
       },
       {
         title: "Data source and accuracy",
-        text: "City dollar rates are fetched automatically and live from the public website iraqborsa.com, and the market average and official rate from usdiqd.com. Gold prices are calculated from the world price (gold-api.com) and converted at the dollar rate, so they may differ from local market and gold shop prices, which add making charges and a margin. The operators don't guarantee that these prices match the market at any given moment, and accept no liability for rapid fluctuations, errors at the source, or delayed updates.",
+        text: "City dollar rates are fetched automatically and live from the public website iraqborsa.com, and the market average from usdiqd.com. Gold prices are calculated from the world price (gold-api.com) and converted at the dollar rate, so they may differ from local market and gold shop prices, which add making charges and a margin. The operators don't guarantee that these prices match the market at any given moment, and accept no liability for rapid fluctuations, errors at the source, or delayed updates.",
       },
       {
         title: "Limitation of liability",
@@ -448,7 +446,6 @@ function buildCards() {
       </div>
       <div class="market-stats">
         <div><span data-i18n="marketSpread"></span><strong class="num" data-role="spread"></strong></div>
-        <div><span data-i18n="officialRate"></span><strong class="num" data-role="official"></strong></div>
         <div><span data-i18n="gapOfficial"></span><strong class="num" data-role="gap"></strong></div>
       </div>
       <div class="market-updated" data-role="updated"></div>
@@ -459,7 +456,7 @@ function buildCards() {
   els.market = {
     card: marketCard,
     main: marketCard.querySelector(".market-main"),
-    ...Object.fromEntries(["mid", "per100", "pre", "post", "change", "sell", "buy", "spread", "official", "gap", "updated"].map((r) => [r, mq(r)])),
+    ...Object.fromEntries(["mid", "per100", "pre", "post", "change", "sell", "buy", "spread", "gap", "updated"].map((r) => [r, mq(r)])),
   };
 
   els.cardEls = Object.fromEntries(CITIES.map((c) => {
@@ -615,7 +612,7 @@ function renderMarket({ animate = false } = {}) {
   r.pre.textContent = s.per100[0];
   r.post.textContent = s.per100[1];
   if (!m) {
-    for (const [el, placeholder] of [[r.mid, "0,000.00"], [r.per100, "000,000"], [r.sell, "0,000.00"], [r.buy, "0,000.00"], [r.spread, "0.00"], [r.official, "0,000"], [r.gap, "00.0%"]]) {
+    for (const [el, placeholder] of [[r.mid, "0,000.00"], [r.per100, "000,000"], [r.sell, "0,000.00"], [r.buy, "0,000.00"], [r.spread, "0.00"], [r.gap, "00.0%"]]) {
       setPlaceholder(el, placeholder, false);
     }
     r.change.className = "delta sk";
@@ -634,7 +631,6 @@ function renderMarket({ animate = false } = {}) {
   show(r.per100, Math.round(m.mid * 100), { format: fmtInt.format, step: 1 });
   show(r.sell, m.sell);
   show(r.buy, m.buy);
-  show(r.official, m.official);
   r.spread.classList.remove("sk");
   r.spread.textContent = m.spread == null ? "—" : `${fmt.format(m.spread)}${m.spreadPct == null ? "" : ` · ${m.spreadPct.toFixed(2)}%`}`;
   r.gap.classList.remove("sk");
@@ -865,7 +861,7 @@ function shareText() {
   const m = state.market;
   if (m) {
     const gap = m.gapPct == null ? "" : `${m.gapPct >= 0 ? "+" : "−"}${Math.abs(m.gapPct).toFixed(1)}%`;
-    lines.push("", s.shareMarket(fmt.format(m.mid), fmt.format(m.official), gap));
+    lines.push("", s.shareMarket(fmt.format(m.mid), gap));
   }
   return `${s.shareTitle}\n\n${lines.join("\n")}`;
 }

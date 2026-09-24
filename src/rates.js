@@ -4,7 +4,7 @@ const RATES_UPSTREAM = "https://iraqborsa.com/borsa-api/summary.php";
 // Free, keyless gold spot price (USD per troy ounce). Its terms ask for no more than a
 // request every few seconds, so the edge cache below keeps us to about one a minute.
 const GOLD_UPSTREAM = "https://api.gold-api.com/price/XAU";
-// Iraq-wide parallel-market average and the CBI official rate, updated every few minutes.
+// Iraq-wide parallel-market average and its gap from the official rate, updated every few minutes.
 // Its responses ask for 60s caching (Cache-Control: max-age=60), which we match.
 const MARKET_UPSTREAM = "https://usdiqd.com/api/rates";
 
@@ -55,8 +55,7 @@ export async function fetchMarket() {
   const num = (v) => (v == null || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
   const m = data.market || {};
   const mid = num(m.mid);
-  const official = num(data.official?.per_dollar);
-  if (data.status !== "ok" || !(mid > 0) || !(official > 0)) throw new Error("unexpected market response");
+  if (data.status !== "ok" || !(mid > 0)) throw new Error("unexpected market response");
   const sides = [num(m.buy), num(m.sell)].filter((v) => v > 0);
   return {
     updatedAt: data.updated_at ?? null,
@@ -65,7 +64,6 @@ export async function fetchMarket() {
     buy: sides.length === 2 ? Math.min(...sides) : null,
     spread: num(m.spread),
     spreadPct: num(m.spread_pct),
-    official,
     gapPct: num(data.gap?.vs_official_pct),
     gapAbs: num(data.gap?.vs_official_abs),
     // Upstream reports the change per $100; the app works per dollar.
