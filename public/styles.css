@@ -502,21 +502,22 @@ svg { display: block; flex-shrink: 0; }
 /* In dark mode the card colour barely differs from the track, so the thumb takes the
    selected tab's tint: blue for Dollar, gold for Gold. */
 [data-scheme="dark"] .seg-thumb {
-  background: rgba(76, 156, 230, 0.24);
-  box-shadow: inset 0 0 0 1px rgba(76, 156, 230, 0.4), 0 1px 3px rgba(0, 0, 0, 0.4);
+  background: rgba(76, 156, 230, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(76, 156, 230, 0.22), 0 1px 3px rgba(0, 0, 0, 0.35);
 }
 [data-scheme="dark"] .seg[data-active="gold"] .seg-thumb {
-  background: rgba(245, 181, 61, 0.2);
-  box-shadow: inset 0 0 0 1px rgba(245, 181, 61, 0.4), 0 1px 3px rgba(0, 0, 0, 0.4);
+  background: rgba(245, 181, 61, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(245, 181, 61, 0.22), 0 1px 3px rgba(0, 0, 0, 0.35);
 }
 @supports (color: color-mix(in srgb, red, blue)) {
+  /* A slight neutral lift keeps the thumb apart from the track; the tint stays gentle. */
   [data-scheme="dark"] .seg-thumb {
-    background: color-mix(in srgb, var(--c-accent) 26%, var(--c-surface));
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-accent) 45%, transparent), 0 1px 3px rgba(0, 0, 0, 0.4);
+    background: color-mix(in srgb, var(--c-accent) 13%, color-mix(in srgb, var(--c-text) 7%, var(--c-surface)));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c-accent) 22%, transparent), 0 1px 3px rgba(0, 0, 0, 0.35);
   }
   [data-scheme="dark"] .seg[data-active="gold"] .seg-thumb {
-    background: color-mix(in srgb, var(--gold) 22%, var(--c-surface));
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gold) 45%, transparent), 0 1px 3px rgba(0, 0, 0, 0.4);
+    background: color-mix(in srgb, var(--gold) 11%, color-mix(in srgb, var(--c-text) 7%, var(--c-surface)));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gold) 22%, transparent), 0 1px 3px rgba(0, 0, 0, 0.35);
   }
 }
 .seg button {
