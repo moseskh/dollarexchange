@@ -3,10 +3,12 @@
 /* ---------- Config ---------- */
 
 const API_URL = "/api/rates";
+const GOLD_API_URL = "/api/gold";
 const REFRESH_MS = 60_000;
 const STALE_MS = 3 * 60_000;
 const CACHE_MAX_AGE_MS = 24 * 60 * 60_000;
 const CACHE_KEY = "borsa:last";
+const GOLD_CACHE_KEY = "borsa:gold";
 const PREFS_KEY = "borsa:prefs";
 // Link included when sharing rates; opens the Mini App directly in Telegram.
 const SHARE_URL = "https://t.me/IraqDollarExchangeBot?startapp";
@@ -18,6 +20,13 @@ const CITIES = [
 ];
 const KINDS = ["sell", "buy"];
 
+// Gold: world spot price (USD per troy ounce) converted to an Iraqi mithqal (5 g),
+// and to dinars at Baghdad's dollar sell rate.
+const KARATS = [24, 21, 18];
+const MITHQAL_GRAMS = 5;
+const TROY_OUNCE_GRAMS = 31.1034768;
+const GOLD_RATE_CITY = "b";
+
 const STR = {
   ar: {
     appName: "بورصة الدولار",
@@ -25,6 +34,8 @@ const STR = {
     langLabel: "English",
     theme: "الوضع الداكن",
     refresh: "تحديث الأسعار",
+    tabUsd: "الدولار",
+    tabGold: "الذهب",
     live: "مباشر",
     loading: "جارٍ جلب الأسعار…",
     updating: "جارٍ التحديث…",
@@ -37,12 +48,19 @@ const STR = {
     unchanged: "ثابت",
     spread: "الفرق",
     iqd: "د.ع",
+    goldTitle: "أسعار الذهب",
+    perMithqal: "لكل مثقال",
+    karat: (k) => `عيار ${k}`,
+    spotLabel: "السعر العالمي للأونصة",
+    rateLabel: "سعر صرف الدولار (بغداد، بيع)",
+    goldError: "تعذّر جلب سعر الذهب.",
     shareAll: "مشاركة الأسعار",
     bestLegend: "أفضل سعر بين المدن",
     footnote: "الأسعار بالدينار العراقي لكل 1 دولار أمريكي",
+    goldFootnote: "السعر العالمي للذهب لكل مثقال (5 غرامات)، محوّلاً إلى الدينار بسعر بيع الدولار في بغداد. قد يختلف عن أسعار محلات الذهب.",
     source: "المصدر:",
     disclaimerLabel: "تنبيه:",
-    disclaimer: "يعرض هذا التطبيق الأسعار المنشورة على موقع iraqborsa.com العام للاطلاع فقط، ولا يعمل في تداول العملات أو صرفها.",
+    disclaimer: "يعرض هذا التطبيق أسعاراً منشورة في مصادر عامة للاطلاع فقط، ولا يعمل في تداول العملات أو الذهب أو صرفها.",
     legalOpen: "اقرأ إخلاء المسؤولية الكامل",
     legalTitle: "إخلاء مسؤولية قانوني وتقني",
     close: "إغلاق",
@@ -56,12 +74,12 @@ const STR = {
         text: "تنفي إدارة التطبيق نفياً قاطعاً قيامها بـ:",
         items: [
           "صياغة أو تثبيت أو توجيه أو تحريك أي من الأسعار المعروضة.",
-          "الدعوة إلى الشراء أو البيع أو المضاربة أو تداول العملات خارج الأطر المصرفية الرسمية المقرة من البنك المركزي العراقي.",
+          "الدعوة إلى الشراء أو البيع أو المضاربة أو تداول العملات أو الذهب خارج الأطر المصرفية الرسمية المقرة من البنك المركزي العراقي.",
         ],
       },
       {
         title: "مصدر البيانات ودقتها",
-        text: "جميع الأرقام المعروضة تُجلب آلياً وبصورة حية من موقع iraqborsa.com العام. لا تضمن الإدارة مطابقة هذه الأسعار للواقع اللحظي، ولا تتحمل أي مسؤولية ناتجة عن التذبذبات السريعة أو أخطاء المصدر أو تأخر وصول التحديثات.",
+        text: "أسعار الدولار تُجلب آلياً وبصورة حية من موقع iraqborsa.com العام، وأسعار الذهب محسوبة من السعر العالمي (gold-api.com) ومحوّلة بسعر صرف الدولار، وقد تختلف عن أسعار السوق المحلي ومحلات الذهب التي تضيف أجور الصياغة وهامش الربح. لا تضمن الإدارة مطابقة هذه الأسعار للواقع اللحظي، ولا تتحمل أي مسؤولية ناتجة عن التذبذبات السريعة أو أخطاء المصدر أو تأخر وصول التحديثات.",
       },
       {
         title: "حدود المسؤولية وإسقاط المطالبات",
@@ -76,6 +94,9 @@ const STR = {
     copied: "تم نسخ الأسعار",
     shareTitle: "💵 سعر الدولار في البورصة",
     shareLine: (city, sell, buy) => `${city}: بيع ${sell} · شراء ${buy}`,
+    goldShareTitle: "🪙 أسعار الذهب لكل مثقال",
+    goldShareLine: (k, iqd, usd) => `عيار ${k}: ${iqd} د.ع ($${usd})`,
+    goldShareNote: "السعر العالمي محوّلاً بسعر صرف بغداد",
   },
   en: {
     appName: "Dollar Borsa",
@@ -83,6 +104,8 @@ const STR = {
     langLabel: "العربية",
     theme: "Dark mode",
     refresh: "Refresh rates",
+    tabUsd: "Dollar",
+    tabGold: "Gold",
     live: "Live",
     loading: "Fetching rates…",
     updating: "Updating…",
@@ -95,12 +118,19 @@ const STR = {
     unchanged: "No change",
     spread: "Spread",
     iqd: "IQD",
+    goldTitle: "Gold prices",
+    perMithqal: "per mithqal",
+    karat: (k) => `${k} karat`,
+    spotLabel: "World price per ounce",
+    rateLabel: "Dollar rate (Baghdad, sell)",
+    goldError: "Couldn't load the gold price.",
     shareAll: "Share rates",
     bestLegend: "Best rate across cities",
     footnote: "Rates in Iraqi dinar per 1 US dollar",
+    goldFootnote: "World gold price per mithqal (5 g), converted to dinars at Baghdad's dollar sell rate. Gold shops may charge more.",
     source: "Source:",
     disclaimerLabel: "Disclaimer:",
-    disclaimer: "This app only shows prices published on the public website iraqborsa.com, for information only. It doesn't trade or exchange currencies.",
+    disclaimer: "This app only shows prices published by public sources, for information only. It doesn't trade or exchange currencies or gold.",
     legalOpen: "Read the full disclaimer",
     legalTitle: "Legal and technical disclaimer",
     close: "Close",
@@ -114,12 +144,12 @@ const STR = {
         text: "The app's operators firmly deny:",
         items: [
           "Creating, fixing, steering or moving any of the prices shown.",
-          "Encouraging buying, selling, speculating or trading currencies outside the official banking channels approved by the Central Bank of Iraq.",
+          "Encouraging buying, selling, speculating or trading currencies or gold outside the official banking channels approved by the Central Bank of Iraq.",
         ],
       },
       {
         title: "Data source and accuracy",
-        text: "All figures are fetched automatically and live from the public website iraqborsa.com. The operators don't guarantee that these prices match the market at any given moment, and accept no liability for rapid fluctuations, errors at the source, or delayed updates.",
+        text: "Dollar rates are fetched automatically and live from the public website iraqborsa.com. Gold prices are calculated from the world price (gold-api.com) and converted at the dollar rate, so they may differ from local market and gold shop prices, which add making charges and a margin. The operators don't guarantee that these prices match the market at any given moment, and accept no liability for rapid fluctuations, errors at the source, or delayed updates.",
       },
       {
         title: "Limitation of liability",
@@ -134,6 +164,9 @@ const STR = {
     copied: "Rates copied",
     shareTitle: "💵 Dollar borsa rates",
     shareLine: (city, sell, buy) => `${city}: Sell ${sell} · Buy ${buy}`,
+    goldShareTitle: "🪙 Gold prices per mithqal",
+    goldShareLine: (k, iqd, usd) => `${k} karat: ${iqd} IQD ($${usd})`,
+    goldShareNote: "World price converted at Baghdad's dollar rate",
   },
 };
 
@@ -157,10 +190,14 @@ const prefs = readJSON(PREFS_KEY) || {};
 const state = {
   lang: prefs.lang === "ar" || prefs.lang === "en" ? prefs.lang : detectLang(),
   theme: prefs.theme === "light" || prefs.theme === "dark" ? prefs.theme : null, // null = follow Telegram/system
-  data: null,
+  tab: prefs.tab === "gold" ? "gold" : "usd",
+  data: null, // dollar rates from iraqborsa.com
   updatedAt: 0,
-  loading: false,
   failed: false,
+  gold: null, // { price: USD per troy ounce, updatedAt }
+  goldAt: 0,
+  goldFailed: false,
+  loading: false,
   offline: navigator.onLine === false,
 };
 
@@ -170,7 +207,7 @@ function detectLang() {
 }
 
 function savePrefs() {
-  writeJSON(PREFS_KEY, { lang: state.lang, theme: state.theme });
+  writeJSON(PREFS_KEY, { lang: state.lang, theme: state.theme, tab: state.tab });
 }
 
 function readJSON(key) {
@@ -186,12 +223,14 @@ function writeJSON(key, value) {
 const $ = (id) => document.getElementById(id);
 const t = () => STR[state.lang];
 const isRTL = () => state.lang === "ar";
+const isGoldTab = () => state.tab === "gold";
 const cityName = (key) => CITIES.find((c) => c.key === key)[state.lang];
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
 const fmtInt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+const fmtUsd = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 function rateOf(city, kind) {
   const v = Number(state.data?.[city]?.[kind]);
@@ -213,6 +252,22 @@ function bestCities(kind) {
   const target = kind === "sell" ? Math.min(...values) : Math.max(...values);
   const keys = CITIES.filter((c) => rateOf(c.key, kind) === target).map((c) => c.key);
   return keys.length === CITIES.length ? new Set() : new Set(keys);
+}
+
+function spotPrice() {
+  const v = Number(state.gold?.price);
+  return Number.isFinite(v) && v > 0 ? v : null;
+}
+
+function goldUsd(karat) {
+  const oz = spotPrice();
+  return oz == null ? null : (oz / TROY_OUNCE_GRAMS) * MITHQAL_GRAMS * (karat / 24);
+}
+
+function goldIqd(karat) {
+  const usd = goldUsd(karat);
+  const rate = rateOf(GOLD_RATE_CITY, "sell");
+  return usd == null || rate == null ? null : Math.round(usd * rate);
 }
 
 const arrow = (dir) =>
@@ -241,6 +296,13 @@ function setNumber(el, value, { animate = false, format = fmt.format, step = 0.5
   el._raf = requestAnimationFrame(tick);
 }
 
+// Show a skeleton while a value is still loading, or a dash once loading has failed.
+function setPlaceholder(el, placeholder, failed) {
+  el._value = null;
+  el.classList.toggle("sk", !failed);
+  el.textContent = failed ? "—" : placeholder;
+}
+
 function restartAnimation(el, className) {
   if (!el || reducedMotion.matches) return;
   el.classList.remove(className);
@@ -259,9 +321,23 @@ const els = {
   langBtn: $("langBtn"),
   themeBtn: $("themeBtn"),
   refreshBtn: $("refreshBtn"),
+  tabs: $("tabs"),
+  tabThumb: $("tabThumb"),
+  tabButtons: [...document.querySelectorAll("#tabs [data-tab]")],
+  usdPanel: $("usdPanel"),
+  goldPanel: $("goldPanel"),
+  karats: $("karats"),
+  spot: $("spot"),
+  goldRate: $("goldRate"),
+  goldError: $("goldError"),
+  goldRetry: $("goldRetry"),
   shareBtn: $("shareBtn"),
   errorView: $("errorView"),
   retryBtn: $("retryBtn"),
+  foot: $("foot"),
+  legend: $("legend"),
+  footnote: $("footnote"),
+  goldSource: $("goldSource"),
   toast: $("toast"),
   legalBtn: $("legalBtn"),
   legalSheet: $("legalSheet"),
@@ -269,8 +345,8 @@ const els = {
 };
 
 function buildCards() {
-  els.content.insertAdjacentHTML("afterbegin", CITIES.map((c, i) => `
-    <section class="card city" data-city="${c.key}" style="--i:${i}">
+  els.usdPanel.innerHTML = CITIES.map((c, i) => `
+    <section class="card city" data-city="${c.key}" style="--i:${i + 1}">
       <div class="city-head">
         <h2 class="city-name" data-role="name"></h2>
         <span class="spread"><span data-i18n="spread"></span> <strong class="num" data-role="spread"></strong> <span data-i18n="iqd"></span></span>
@@ -284,16 +360,32 @@ function buildCards() {
             <div class="price-sub"><span data-role="pre"></span><span class="num" data-role="per100"></span><span data-role="post"></span></div>
           </div>`).join("")}
       </div>
-    </section>`).join(""));
+    </section>`).join("");
 
   els.cardEls = Object.fromEntries(CITIES.map((c) => {
-    const card = els.content.querySelector(`[data-city="${c.key}"]`);
+    const card = els.usdPanel.querySelector(`[data-city="${c.key}"]`);
     const prices = Object.fromEntries(KINDS.map((kind) => {
       const col = card.querySelector(`.price[data-kind="${kind}"]`);
       const q = (r) => col.querySelector(`[data-role="${r}"]`);
       return [kind, { col, value: q("value"), delta: q("delta"), per100: q("per100"), pre: q("pre"), post: q("post") }];
     }));
     return [c.key, { card, name: card.querySelector('[data-role="name"]'), spread: card.querySelector('[data-role="spread"]'), prices }];
+  }));
+
+  els.karats.innerHTML = KARATS.map((k) => `
+    <div class="karat-row" data-karat="${k}">
+      <span class="karat-badge num" aria-hidden="true">${k}</span>
+      <span class="karat-label" data-role="label"></span>
+      <div class="karat-prices">
+        <div class="karat-iqd"><span class="num" data-role="iqd"></span> <span class="unit" data-i18n="iqd"></span></div>
+        <div class="karat-usd"><span class="num" data-role="usd"></span></div>
+      </div>
+    </div>`).join("");
+
+  els.karatEls = Object.fromEntries(KARATS.map((k) => {
+    const row = els.karats.querySelector(`[data-karat="${k}"]`);
+    const q = (r) => row.querySelector(`[data-role="${r}"]`);
+    return [k, { row, label: q("label"), iqd: q("iqd"), usd: q("usd") }];
   }));
 }
 
@@ -325,6 +417,7 @@ function applyLanguage() {
       card.prices[kind].post.textContent = s.per100[1];
     }
   }
+  for (const k of KARATS) els.karatEls[k].label.textContent = s.karat(k);
 }
 
 function renderCards({ animate = false } = {}) {
@@ -370,26 +463,98 @@ function renderCards({ animate = false } = {}) {
   }
 }
 
+function renderGold({ animate = false } = {}) {
+  const goldDown = !state.gold && state.goldFailed;
+  const rateDown = !state.data && state.failed;
+
+  for (const k of KARATS) {
+    const r = els.karatEls[k];
+    const usd = goldUsd(k);
+    const iqd = goldIqd(k);
+    const before = r.iqd._value;
+
+    if (usd == null) setPlaceholder(r.usd, "000.00", goldDown);
+    else {
+      r.usd.classList.remove("sk");
+      setNumber(r.usd, usd, { animate, format: (v) => `$${fmtUsd.format(v)}`, step: 0.01 });
+    }
+
+    if (iqd == null) setPlaceholder(r.iqd, "0,000,000", goldDown || rateDown);
+    else {
+      r.iqd.classList.remove("sk");
+      setNumber(r.iqd, iqd, { animate, format: fmtInt.format, step: 1 });
+      if (animate && before != null && before !== iqd) {
+        restartAnimation(r.row, iqd > before ? "flash-up" : "flash-down");
+      }
+    }
+  }
+
+  const spot = spotPrice();
+  if (spot == null) setPlaceholder(els.spot, "$0,000.00", goldDown);
+  else {
+    els.spot.classList.remove("sk");
+    setNumber(els.spot, spot, { animate, format: (v) => `$${fmtUsd.format(v)}`, step: 0.01 });
+  }
+  const rate = rateOf(GOLD_RATE_CITY, "sell");
+  if (rate == null) setPlaceholder(els.goldRate, "0,000.0", rateDown);
+  else {
+    els.goldRate.classList.remove("sk");
+    setNumber(els.goldRate, rate, { animate });
+  }
+
+  els.goldError.hidden = !goldDown;
+}
+
+// Which panel, footer notes and share state go with the current tab.
+function applyTab() {
+  const gold = isGoldTab();
+  const usdDown = !state.data && state.failed;
+  for (const b of els.tabButtons) b.setAttribute("aria-selected", String(b.dataset.tab === state.tab));
+  els.goldPanel.hidden = !gold;
+  els.usdPanel.hidden = gold || usdDown;
+  els.errorView.hidden = gold || !usdDown;
+  els.legend.hidden = gold;
+  els.goldSource.hidden = !gold;
+  els.footnote.textContent = gold ? t().goldFootnote : t().footnote;
+  els.shareBtn.disabled = gold ? !state.gold : !state.data;
+}
+
+function moveThumb({ instant = false } = {}) {
+  const btn = els.tabButtons.find((b) => b.dataset.tab === state.tab);
+  if (!btn || !btn.offsetWidth) return;
+  const thumb = els.tabThumb;
+  if (instant) thumb.style.transition = "none";
+  thumb.style.width = `${btn.offsetWidth}px`;
+  thumb.style.transform = `translateX(${btn.offsetLeft}px)`;
+  if (instant) {
+    void thumb.offsetWidth;
+    thumb.style.transition = "";
+  }
+}
+
 function renderStatus() {
   const s = t();
-  const age = Date.now() - state.updatedAt;
+  const gold = isGoldTab();
+  const hasData = gold ? Boolean(state.gold) : Boolean(state.data);
+  const failed = gold ? state.goldFailed : state.failed;
+  const updatedAt = gold ? state.goldAt : state.updatedAt;
   let st;
   let text;
   if (state.offline) {
     st = "offline";
-    text = state.updatedAt ? `${s.offline} · ${relativeTime(state.updatedAt)}` : s.offline;
+    text = updatedAt ? `${s.offline} · ${relativeTime(updatedAt)}` : s.offline;
   } else if (state.loading) {
     st = "loading";
-    text = state.data ? s.updating : s.loading;
-  } else if (!state.data) {
+    text = hasData ? s.updating : s.loading;
+  } else if (!hasData) {
     st = "stale";
-    text = s.errorTitle;
-  } else if (state.failed || age > STALE_MS) {
+    text = gold ? s.goldError : s.errorTitle;
+  } else if (failed || Date.now() - updatedAt > STALE_MS) {
     st = "stale";
-    text = `${s.lastUpdate} ${relativeTime(state.updatedAt)}`;
+    text = `${s.lastUpdate} ${relativeTime(updatedAt)}`;
   } else {
     st = "live";
-    text = `${s.live} · ${relativeTime(state.updatedAt)}`;
+    text = `${s.live} · ${relativeTime(updatedAt)}`;
   }
   els.status.dataset.state = st;
   els.statusText.textContent = text;
@@ -409,10 +574,9 @@ function relativeTime(ts) {
 
 function renderAll(opts) {
   renderCards(opts);
+  renderGold(opts);
+  applyTab();
   renderStatus();
-  els.shareBtn.disabled = !state.data;
-  els.content.hidden = !state.data && state.failed;
-  els.errorView.hidden = !els.content.hidden;
 }
 
 /* ---------- Data ---------- */
@@ -430,6 +594,12 @@ function scheduleRefresh(delay = REFRESH_MS) {
   btn.classList.add("counting");
 }
 
+async function getJSON(url) {
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`);
+  return res.json();
+}
+
 async function load({ manual = false } = {}) {
   if (state.loading) return;
   if (manual) haptic.tap();
@@ -438,58 +608,77 @@ async function load({ manual = false } = {}) {
   els.refreshBtn.classList.add("loading");
   els.refreshBtn.classList.remove("counting");
   renderStatus();
-  const minSpin = sleep(manual ? 600 : 0);
 
-  try {
-    const res = await fetch(API_URL, { cache: "no-store" });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = await res.json();
-    if (!CITIES.every((c) => json[c.key])) throw new Error("Unexpected response");
-    await minSpin;
-    const previous = state.data;
-    state.data = json;
+  // Dollar and gold load independently: one source failing doesn't blank the other tab.
+  const [usd, gold] = await Promise.allSettled([getJSON(API_URL), getJSON(GOLD_API_URL)]);
+  if (manual) await sleep(600);
+  const previous = state.data;
+  const hadGold = Boolean(state.gold);
+
+  if (usd.status === "fulfilled" && CITIES.every((c) => usd.value[c.key])) {
+    state.data = usd.value;
     state.updatedAt = Date.now();
     state.failed = false;
-    state.offline = false;
-    writeJSON(CACHE_KEY, { data: json, t: state.updatedAt });
-    onFreshData(previous);
-    if (manual) {
+    writeJSON(CACHE_KEY, { data: state.data, t: state.updatedAt });
+  } else {
+    console.error("Failed to load rates:", usd.reason || "unexpected response");
+    state.failed = true;
+  }
+
+  if (gold.status === "fulfilled" && Number(gold.value.price) > 0) {
+    state.gold = gold.value;
+    state.goldAt = Date.now();
+    state.goldFailed = false;
+    writeJSON(GOLD_CACHE_KEY, { gold: state.gold, t: state.goldAt });
+  } else {
+    console.error("Failed to load gold:", gold.reason || "unexpected response");
+    state.goldFailed = true;
+  }
+
+  if (!state.failed || !state.goldFailed) state.offline = false;
+  state.loading = false;
+  els.refreshBtn.classList.remove("loading");
+  onFreshData(previous, hadGold);
+
+  const tabFailed = isGoldTab() ? state.goldFailed : state.failed;
+  if (manual) {
+    if (tabFailed) {
+      haptic.error();
+      toast(t().refreshFailed);
+    } else {
       haptic.success();
       toast(t().refreshed);
     }
-  } catch (err) {
-    console.error("Failed to load rates:", err);
-    await minSpin;
-    state.failed = true;
-    if (manual || !state.data) haptic.error();
-    if (manual && state.data) toast(t().refreshFailed);
-    renderAll();
-  } finally {
-    state.loading = false;
-    els.refreshBtn.classList.remove("loading");
-    renderStatus();
-    if (!document.hidden) scheduleRefresh();
+  } else if (!state.data && state.failed) {
+    haptic.error();
   }
+  if (!document.hidden) scheduleRefresh();
 }
 
-function onFreshData(previous) {
-  if (!previous) {
-    renderAll();
-    for (const el of els.content.querySelectorAll(".price-value .num, .delta, .price-sub .num, [data-role='spread']")) {
+function onFreshData(previous, hadGold) {
+  renderAll({ animate: true });
+
+  if (!previous && state.data) {
+    for (const el of els.usdPanel.querySelectorAll(".price-value .num, .delta, .price-sub .num, [data-role='spread']")) {
       restartAnimation(el, "appear");
     }
-    return;
+  }
+  if (!hadGold && state.gold) {
+    for (const el of els.goldPanel.querySelectorAll(".karat-iqd .num, .karat-usd .num, #spot")) {
+      restartAnimation(el, "appear");
+    }
   }
 
   let changed = 0;
-  renderAll({ animate: true });
-  for (const c of CITIES) {
-    for (const kind of KINDS) {
-      const before = Number(previous[c.key]?.[kind]);
-      const after = rateOf(c.key, kind);
-      if (after == null || before === after) continue;
-      changed++;
-      restartAnimation(els.cardEls[c.key].prices[kind].col, after > before ? "flash-up" : "flash-down");
+  if (previous) {
+    for (const c of CITIES) {
+      for (const kind of KINDS) {
+        const before = Number(previous[c.key]?.[kind]);
+        const after = rateOf(c.key, kind);
+        if (after == null || before === after) continue;
+        changed++;
+        restartAnimation(els.cardEls[c.key].prices[kind].col, after > before ? "flash-up" : "flash-down");
+      }
     }
   }
   if (changed) haptic.soft();
@@ -497,13 +686,26 @@ function onFreshData(previous) {
 
 /* ---------- Share & toast ---------- */
 
-async function share() {
-  haptic.tap();
-  if (!state.data) return;
+function shareText() {
   const s = t();
+  if (isGoldTab()) {
+    if (!state.gold) return null;
+    const lines = KARATS.map((k) => {
+      const iqd = goldIqd(k);
+      return s.goldShareLine(k, iqd == null ? "—" : fmtInt.format(iqd), fmtUsd.format(goldUsd(k)));
+    });
+    return `${s.goldShareTitle}\n\n${lines.join("\n")}\n\n${s.goldShareNote}`;
+  }
+  if (!state.data) return null;
   const lines = CITIES.map((c) =>
     s.shareLine(cityName(c.key), fmt.format(rateOf(c.key, "sell")), fmt.format(rateOf(c.key, "buy"))));
-  const text = `${s.shareTitle}\n\n${lines.join("\n")}`;
+  return `${s.shareTitle}\n\n${lines.join("\n")}`;
+}
+
+async function share() {
+  haptic.tap();
+  const text = shareText();
+  if (!text) return;
   const url = SHARE_URL || location.origin;
 
   if (inTelegram && tg.isVersionAtLeast("6.1")) {
@@ -516,7 +718,7 @@ async function share() {
   }
   try {
     await navigator.clipboard.writeText(`${text}\n\n${url}`);
-    toast(s.copied);
+    toast(t().copied);
   } catch (err) {
     console.error("Copy failed:", err);
   }
@@ -564,39 +766,19 @@ function closeLegal() {
   sheetTimer = setTimeout(() => { sheet.hidden = true; }, reducedMotion.matches ? 0 : SHEET_MS);
 }
 
-/* ---------- Language & theme ---------- */
+/* ---------- Pop transition (language and tabs) ---------- */
 
-// Every block shrinks away, the layout mirrors while nothing is visible, then the blocks
-// pop back in row by row, in the new reading order.
-let switchingLang = false;
+let switching = false;
 
-function langPopRows() {
-  const q = (sel, root = els.app) => [...root.querySelectorAll(sel)];
-  return [
-    q(".appbar .logo, .appbar .brand > div:not(.logo), .appbar .icon-btn"),
-    ...q(".city").map((card) => q(".city-head, .price", card)),
-    [els.shareBtn],
-    q(".foot"),
-  ];
-}
-
-async function toggleLanguage() {
-  if (switchingLang) return;
-  haptic.select();
-  const swap = () => {
-    state.lang = state.lang === "ar" ? "en" : "ar";
-    savePrefs();
-    applyLanguage();
-    renderAll();
-  };
+// Blocks shrink away, `swap` changes the page while nothing is visible, then the blocks
+// returned by `rowsAfter` pop back in row by row, in reading order.
+async function popTransition(rowsBefore, swap, rowsAfter) {
   if (reducedMotion.matches || !els.app.animate) {
     swap();
     return;
   }
-
-  switchingLang = true;
-  const rows = langPopRows();
-  const popOut = rows.flat().map((el) => el.animate(
+  switching = true;
+  const popOut = rowsBefore.flat().map((el) => el.animate(
     [{ opacity: 1, transform: "none" }, { opacity: 0, transform: "scale(0.6)" }],
     { duration: 120, easing: "cubic-bezier(0.4, 0, 1, 1)", fill: "forwards" },
   ));
@@ -604,14 +786,67 @@ async function toggleLanguage() {
 
   swap();
   popOut.forEach((a) => a.cancel());
-  rows.forEach((row, r) => row.forEach((el, k) => el.animate(
+  rowsAfter().forEach((row, r) => row.forEach((el, k) => el.animate(
     [{ opacity: 0, transform: "scale(0.6)" }, { opacity: 1, transform: "none" }],
     { duration: 460, delay: 100 + r * 70 + k * 45, easing: "cubic-bezier(0.34, 1.4, 0.64, 1)", fill: "backwards" },
   )));
 
-  await sleep(900);
-  switchingLang = false;
+  await sleep(150);
+  switching = false;
 }
+
+const qAll = (sel, root = els.app) => [...root.querySelectorAll(sel)];
+
+function contentRows(tab) {
+  if (tab === "gold") {
+    return [
+      qAll("#goldCard .city-head"),
+      ...qAll("#goldCard .karat-row").map((row) => [row]),
+      qAll("#goldCard .gold-foot, #goldError:not([hidden])"),
+    ];
+  }
+  if (!els.errorView.hidden) return [[els.errorView]];
+  return qAll(".city").map((card) => qAll(".city-head, .price", card));
+}
+
+function langPopRows() {
+  return [
+    qAll(".appbar .logo, .appbar .brand > div:not(.logo), .appbar .icon-btn"),
+    [els.tabs],
+    ...contentRows(state.tab),
+    [els.shareBtn],
+    [els.foot],
+  ];
+}
+
+function toggleLanguage() {
+  if (switching) return;
+  haptic.select();
+  popTransition(langPopRows(), () => {
+    state.lang = state.lang === "ar" ? "en" : "ar";
+    savePrefs();
+    applyLanguage();
+    renderAll();
+    moveThumb({ instant: true });
+  }, langPopRows);
+}
+
+function selectTab(tab) {
+  if (tab === state.tab || switching) return;
+  haptic.select();
+  const rows = () => [...contentRows(state.tab), [els.foot]];
+  const before = rows();
+  state.tab = tab;
+  savePrefs();
+  for (const b of els.tabButtons) b.setAttribute("aria-selected", String(b.dataset.tab === tab));
+  moveThumb();
+  popTransition(before, () => {
+    applyTab();
+    renderStatus();
+  }, rows);
+}
+
+/* ---------- Theme ---------- */
 
 const systemScheme = () => {
   if (inTelegram) return tg.colorScheme === "dark" ? "dark" : "light";
@@ -676,13 +911,19 @@ function toggleTheme() {
 
 function bindEvents() {
   els.refreshBtn.addEventListener("click", () => load({ manual: true }));
-  els.retryBtn.addEventListener("click", () => {
-    state.failed = false;
-    renderAll();
-    load({ manual: true });
-  });
+  for (const btn of [els.retryBtn, els.goldRetry]) {
+    btn.addEventListener("click", () => {
+      state.failed = state.goldFailed = false;
+      renderAll();
+      load({ manual: true });
+    });
+  }
   els.langBtn.addEventListener("click", toggleLanguage);
   els.themeBtn.addEventListener("click", toggleTheme);
+  els.tabs.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-tab]");
+    if (btn) selectTab(btn.dataset.tab);
+  });
   els.shareBtn.addEventListener("click", share);
   els.legalBtn.addEventListener("click", openLegal);
   els.legalSheet.addEventListener("click", (e) => {
@@ -700,6 +941,7 @@ function bindEvents() {
     tg.openLink(link.href);
   });
 
+  window.addEventListener("resize", () => moveThumb({ instant: true }));
   window.addEventListener("online", () => { state.offline = false; load(); });
   window.addEventListener("offline", () => { state.offline = true; renderStatus(); });
 
@@ -730,13 +972,19 @@ function init() {
   buildCards();
   applyLanguage();
 
-  // Show the last known rates instantly, then refresh in the background.
+  // Show the last known prices instantly, then refresh in the background.
   const cached = readJSON(CACHE_KEY);
   if (cached?.data && Date.now() - cached.t < CACHE_MAX_AGE_MS) {
     state.data = cached.data;
     state.updatedAt = cached.t;
   }
+  const cachedGold = readJSON(GOLD_CACHE_KEY);
+  if (cachedGold?.gold && Date.now() - cachedGold.t < CACHE_MAX_AGE_MS) {
+    state.gold = cachedGold.gold;
+    state.goldAt = cachedGold.t;
+  }
   renderAll();
+  moveThumb({ instant: true });
   bindEvents();
 
   if (inTelegram) {

@@ -93,6 +93,7 @@
   --c-accent-soft: rgba(36, 129, 204, 0.13);
   --c-up-soft: rgba(20, 160, 73, 0.13);
   --c-down-soft: rgba(224, 56, 62, 0.12);
+  --c-gold-soft: rgba(232, 161, 12, 0.16);
   color-scheme: light;
 }
 
@@ -117,6 +118,7 @@
     --c-accent-soft: color-mix(in srgb, var(--c-accent) 14%, transparent);
     --c-up-soft: color-mix(in srgb, var(--up) 14%, transparent);
     --c-down-soft: color-mix(in srgb, var(--down) 14%, transparent);
+    --c-gold-soft: color-mix(in srgb, var(--gold) 18%, transparent);
   }
 }
 
@@ -378,8 +380,8 @@ svg { display: block; flex-shrink: 0; }
     radial-gradient(120% 90% at var(--glow-x, 100%) 0%, var(--c-accent-soft), transparent 60%),
     var(--c-surface);
 }
-[dir="ltr"] .city { --glow-x: 0%; }
-.city { transition: --glow-x 700ms var(--ease-out); }
+[dir="ltr"] :is(.city, .gold-card) { --glow-x: 0%; }
+:is(.city, .gold-card) { transition: --glow-x 700ms var(--ease-out); }
 .city-head {
   display: flex;
   align-items: center;
@@ -459,6 +461,109 @@ svg { display: block; flex-shrink: 0; }
   color: var(--c-hint);
   white-space: nowrap;
 }
+
+/* Tabs: segmented control with a sliding thumb */
+.seg {
+  position: relative;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  padding: 4px;
+  border-radius: var(--r-md);
+  background: var(--c-fill);
+}
+.seg-thumb {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 0;
+  width: 0;
+  border-radius: 11px;
+  background: var(--c-surface);
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.14), 0 1px 1px rgba(16, 24, 40, 0.05);
+  transition: transform var(--dur-3) var(--ease-spring), width var(--dur-3) var(--ease-spring);
+}
+.seg button {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  height: 40px;
+  border-radius: 11px;
+  font-size: var(--fs-callout);
+  font-weight: 500;
+  color: var(--c-hint);
+  transition: color var(--dur-2);
+}
+.seg button .icon { width: 18px; height: 18px; transition: color var(--dur-2); }
+.seg button[aria-selected="true"] { color: var(--c-text); font-weight: 600; }
+.seg button[data-tab="usd"][aria-selected="true"] .icon { color: var(--c-link); }
+.seg button[data-tab="gold"][aria-selected="true"] .icon { color: var(--gold); }
+
+/* Gold card */
+.gold-card {
+  padding: var(--sp-4) var(--sp-4) var(--sp-3);
+  background:
+    radial-gradient(120% 90% at var(--glow-x, 100%) 0%, var(--c-gold-soft), transparent 60%),
+    var(--c-surface);
+}
+.gold-card .city-name::before { background: var(--gold); }
+#karats { margin: var(--sp-1) calc(var(--sp-2) * -1) 0; }
+.karat-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-2);
+  border-radius: var(--r-md);
+}
+.karat-row + .karat-row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  inset-inline: var(--sp-2);
+  height: 1px;
+  background: var(--c-sep);
+}
+.karat-badge {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  font-weight: 700;
+  color: #6b4700;
+  background: linear-gradient(145deg, #ffe49a 0%, #f5b53d 55%, #d4930f 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55), 0 2px 8px rgba(212, 147, 15, 0.3);
+}
+.karat-label { font-size: var(--fs-body); font-weight: 600; }
+.karat-prices { text-align: end; }
+.karat-iqd .num {
+  display: inline-block;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+.karat-iqd .unit { font-size: var(--fs-caption); color: var(--c-hint); font-weight: 500; }
+.karat-usd { margin-top: 2px; font-size: var(--fs-caption); color: var(--c-hint); }
+.gold-error { margin: var(--sp-2) 0 0; font-size: var(--fs-callout); color: var(--down); text-align: center; }
+.gold-foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin-top: var(--sp-2);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--c-sep);
+  font-size: var(--fs-caption);
+  color: var(--c-hint);
+}
+.gold-foot > div { display: flex; justify-content: space-between; gap: var(--sp-3); }
+.gold-foot strong { color: var(--c-text); font-weight: 600; }
 
 /* Share */
 .share-btn {
@@ -601,7 +706,11 @@ svg { display: block; flex-shrink: 0; }
   .icon-btn { width: 36px; height: 36px; }
   .logo { width: 36px; height: 36px; border-radius: 11px; font-size: 18px; }
   .brand h1 { font-size: var(--fs-headline); }
-  .city { padding-inline: var(--sp-3); }
+  .city, .gold-card { padding-inline: var(--sp-3); }
+  .karat-row { gap: var(--sp-2); }
+  .karat-badge { width: 34px; height: 34px; font-size: 13px; }
+  .karat-label { font-size: var(--fs-callout); }
+  .karat-iqd .num { font-size: 19px; }
   .price:first-child { padding-inline-end: var(--sp-3); }
   .price + .price { padding-inline-start: var(--sp-3); }
   .price-sub [data-role="post"] { display: none; }
@@ -629,7 +738,8 @@ svg { display: block; flex-shrink: 0; }
   transition: background-color 350ms var(--ease-out), color 350ms var(--ease-out), border-color 350ms var(--ease-out), box-shadow 350ms var(--ease-out) !important;
 }
 
-.enter > * { animation: rise 600ms var(--ease-out) both; animation-delay: calc(var(--i, 0) * 70ms); }
+.enter > :not(.stack),
+.enter > .stack > * { animation: rise 600ms var(--ease-out) both; animation-delay: calc(var(--i, 0) * 70ms); }
 .appear { animation: appear var(--dur-3) var(--ease-out) both; }
 .flash-up { animation: flash-up 1.6s var(--ease-in); }
 .flash-down { animation: flash-down 1.6s var(--ease-in); }

@@ -1,20 +1,24 @@
 // Serves the mini app from ./public, proxies the borsa API (which sends no CORS headers
-// and so can't be called from the browser directly), and answers the Telegram bot.
+// and so can't be called from the browser directly) and the world gold price, and answers
+// the Telegram bot.
 
 const UPSTREAM = "https://iraqborsa.com/borsa-api/summary.php";
 const CITY_KEYS = ["b", "s", "n"]; // Baghdad, Basra, Erbil
+// Free, keyless gold spot price (USD per troy ounce). Its terms ask for no more than a
+// request every few seconds, so the edge cache below keeps us to about one a minute.
+const GOLD_UPSTREAM = "https://api.gold-api.com/price/XAU";
 
 // Bot replies. Secrets (set in Cloudflare, never in the repo):
 //   BOT_TOKEN       token from @BotFather
 //   WEBHOOK_SECRET  random string Telegram sends back with every update
 const BOT_TEXT = {
   ar: {
-    welcome: "💵 أهلاً بك في بورصة الدولار\nأسعار صرف الدولار مقابل الدينار العراقي مباشرة من بغداد والبصرة وأربيل.\n\nاضغط الزر أدناه لفتح التطبيق 👇",
+    welcome: "💵 أهلاً بك في بورصة الدولار\nأسعار صرف الدولار مقابل الدينار العراقي مباشرة من بغداد والبصرة وأربيل، وأسعار الذهب لكل مثقال.\n\nاضغط الزر أدناه لفتح التطبيق 👇",
     button: "افتح التطبيق",
     menu: "الأسعار",
   },
   en: {
-    welcome: "💵 Welcome to Dollar Exchange\nLive USD → IQD rates for Baghdad, Basra and Erbil.\n\nTap the button below to open the app 👇",
+    welcome: "💵 Welcome to Dollar Exchange\nLive USD → IQD rates for Baghdad, Basra and Erbil, plus gold prices per mithqal.\n\nTap the button below to open the app 👇",
     button: "Open the app",
     menu: "Rates",
   },
@@ -24,6 +28,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === "/api/rates") return getRates();
+    if (url.pathname === "/api/gold") return getGold();
     if (url.pathname === "/telegram/webhook" && request.method === "POST") return handleUpdate(request, env);
     if (url.pathname === "/telegram/setup" && request.method === "POST") return setupBot(request, env);
     return env.ASSETS.fetch(request);
@@ -44,6 +49,23 @@ async function getRates() {
       throw new Error("unexpected upstream response");
     }
     return json(data, 200);
+  } catch (err) {
+    return json({ error: err.message }, 502);
+  }
+}
+
+async function getGold() {
+  try {
+    const res = await fetch(GOLD_UPSTREAM, {
+      headers: { Accept: "application/json", "User-Agent": "BorsaMiniApp/1.0" },
+      cf: { cacheTtl: 60, cacheEverything: true },
+    });
+    if (!res.ok) throw new Error(`gold upstream returned ${res.status}`);
+
+    const data = await res.json();
+    const price = Number(data.price);
+    if (!Number.isFinite(price) || price <= 0) throw new Error("unexpected gold response");
+    return json({ price, updatedAt: data.updatedAt ?? null }, 200);
   } catch (err) {
     return json({ error: err.message }, 502);
   }

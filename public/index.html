@@ -53,28 +53,64 @@
     </header>
 
     <main class="stack" id="content">
-      <button class="share-btn press" id="shareBtn" type="button" style="--i:3">
+      <nav class="seg" id="tabs" role="tablist" style="--i:0">
+        <span class="seg-thumb" id="tabThumb"></span>
+        <button type="button" role="tab" data-tab="usd">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2.5"/><circle cx="12" cy="12" r="2.6"/><path d="M6.5 9.5v.01M17.5 14.5v.01"/></svg>
+          <span data-i18n="tabUsd"></span>
+        </button>
+        <button type="button" role="tab" data-tab="gold">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 19.5h8l-1.4-5H4.4z"/><path d="M13 19.5h8l-1.4-5h-5.2z"/><path d="M8 12.5h8l-1.4-5H9.4z"/></svg>
+          <span data-i18n="tabGold"></span>
+        </button>
+      </nav>
+
+      <div class="stack" id="usdPanel" role="tabpanel"></div>
+
+      <section class="card empty" id="errorView" hidden>
+        <div class="empty-icon">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 8.8a15 15 0 0 1 4.2-2.6M22 8.8A15 15 0 0 0 10.5 5.1M5 12.5a10 10 0 0 1 3.5-2M19 12.5a10 10 0 0 0-2-1.4M8.5 16a5 5 0 0 1 7 0M12 19.5h.01M3 3l18 18"/></svg>
+        </div>
+        <h2 data-i18n="errorTitle"></h2>
+        <p data-i18n="errorBody"></p>
+        <button class="btn-primary press" id="retryBtn" type="button" data-i18n="retry"></button>
+      </section>
+
+      <div class="stack" id="goldPanel" role="tabpanel" hidden>
+        <section class="card gold-card" id="goldCard" style="--i:1">
+          <div class="city-head">
+            <h2 class="city-name" data-i18n="goldTitle"></h2>
+            <span class="spread" data-i18n="perMithqal"></span>
+          </div>
+          <div id="karats"></div>
+          <p class="gold-error" id="goldError" hidden>
+            <span data-i18n="goldError"></span>
+            <button class="link-btn" id="goldRetry" type="button" data-i18n="retry"></button>
+          </p>
+          <div class="gold-foot">
+            <div><span data-i18n="spotLabel"></span><strong class="num" id="spot"></strong></div>
+            <div><span data-i18n="rateLabel"></span><strong class="num" id="goldRate"></strong></div>
+          </div>
+        </section>
+      </div>
+
+      <button class="share-btn press" id="shareBtn" type="button" style="--i:4">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21.2 3.3 2.9 10.4c-.8.3-.8 1.4 0 1.7l4.6 1.6 1.8 5.6c.2.7 1.1.9 1.6.4l2.6-2.5 4.9 3.6c.6.4 1.4.1 1.6-.6l3-15.5c.2-.9-.7-1.6-1.6-1.4Z"/><path d="m7.5 13.7 9.8-6.5"/></svg>
         <span data-i18n="shareAll"></span>
       </button>
     </main>
 
-    <section class="card empty" id="errorView" hidden>
-      <div class="empty-icon">
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M2 8.8a15 15 0 0 1 4.2-2.6M22 8.8A15 15 0 0 0 10.5 5.1M5 12.5a10 10 0 0 1 3.5-2M19 12.5a10 10 0 0 0-2-1.4M8.5 16a5 5 0 0 1 7 0M12 19.5h.01M3 3l18 18"/></svg>
-      </div>
-      <h2 data-i18n="errorTitle"></h2>
-      <p data-i18n="errorBody"></p>
-      <button class="btn-primary press" id="retryBtn" type="button" data-i18n="retry"></button>
-    </section>
-
-    <footer class="foot">
-      <div class="legend">
+    <footer class="foot" id="foot">
+      <div class="legend" id="legend">
         <svg class="star" viewBox="0 0 24 24" aria-hidden="true"><path d="m12 2.8 2.8 5.9 6.4.8-4.7 4.4 1.2 6.4L12 17.2l-5.7 3.1 1.2-6.4-4.7-4.4 6.4-.8Z"/></svg>
         <span data-i18n="bestLegend"></span>
       </div>
-      <div data-i18n="footnote"></div>
-      <div><span data-i18n="source"></span> <a class="ext-link" href="https://iraqborsa.com" target="_blank" rel="noopener">iraqborsa.com</a></div>
+      <div id="footnote"></div>
+      <div>
+        <span data-i18n="source"></span>
+        <span id="goldSource" hidden><a class="ext-link" href="https://gold-api.com" target="_blank" rel="noopener">gold-api.com</a> · </span>
+        <a class="ext-link" href="https://iraqborsa.com" target="_blank" rel="noopener">iraqborsa.com</a>
+      </div>
       <p class="disclaimer">
         <strong data-i18n="disclaimerLabel"></strong> <span data-i18n="disclaimer"></span>
         <button class="link-btn" id="legalBtn" type="button" data-i18n="legalOpen"></button>

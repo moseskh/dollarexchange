@@ -1,10 +1,12 @@
 # Dollar Exchange
 
-A Telegram Mini App that shows the USD → IQD borsa rates (sell / buy) for Baghdad, Basra and Erbil, using data from [iraqborsa.com](https://iraqborsa.com).
+A Telegram Mini App that shows the USD → IQD borsa rates (sell / buy) for Baghdad, Basra and Erbil, using data from [iraqborsa.com](https://iraqborsa.com), plus gold prices per mithqal.
 
 **Live:** https://dollarexchange.mosakh.workers.dev. Every push to `main` deploys automatically.
 
+- **Two tabs:** Dollar and Gold, with the last one used remembered.
 - **One card per city:** sell and buy for Baghdad, Basra and Erbil, each with the change since the previous price, the price of $100, and the buy/sell spread.
+- **Gold:** 24, 21 and 18 karat per mithqal (5 g), in dinars and dollars. Calculated from the world gold price ([gold-api.com](https://gold-api.com)) and converted at Baghdad's dollar sell rate, so gold shops may charge more.
 - **Best rate:** ★ marks the cheapest place to buy dollars (lowest sell) and the best place to sell them (highest buy).
 - **Share:** sends all three cities' rates to any Telegram chat.
 - **Always fresh:** refreshes every minute (the ring on the refresh button counts down), and again when the user comes back to the app. The last rates are saved on the device, so they appear instantly on the next open.
@@ -21,7 +23,7 @@ A Telegram Mini App that shows the USD → IQD borsa rates (sell / buy) for Bagh
 | `public/app.js` | App logic: data, rendering, sharing, Telegram integration |
 | `public/fonts/` | IBM Plex Sans Arabic, self-hosted (SIL Open Font License, see `OFL.txt`) |
 | `public/_headers` | Caches font files for a year |
-| `src/worker.js` | Cloudflare Worker that serves the page and `GET /api/rates` |
+| `src/worker.js` | Cloudflare Worker: serves the page, `GET /api/rates` (dollar), `GET /api/gold` (world gold price) and the bot webhook |
 | `wrangler.jsonc` | Worker config |
 
 `/api/rates` proxies `https://iraqborsa.com/borsa-api/summary.php`. The page can't call that API directly because it sends no CORS headers, so browsers block the request. The Worker caches the upstream response for 30 seconds, so the source isn't hit on every app open.
