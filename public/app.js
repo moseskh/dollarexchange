@@ -11,6 +11,9 @@ const CACHE_MAX_AGE_MS = 24 * 60 * 60_000;
 const CACHE_KEY = "borsa:last";
 const GOLD_CACHE_KEY = "borsa:gold";
 const MARKET_CACHE_KEY = "borsa:market";
+const HISTORY_API_URL = "/api/market/history";
+const HISTORY_TFS = ["12h", "1d", "1w"]; // 14 days every 12h · 60 days daily · ~10 weeks weekly
+const HISTORY_MAX_AGE_MS = 5 * 60_000; // the source updates its history every few minutes at most
 const PREFS_KEY = "borsa:prefs";
 // Link included when sharing rates; opens the Mini App directly in Telegram.
 // The start parameter lets analytics count opens that came from a share.
@@ -64,6 +67,15 @@ const STR = {
     marketSpread: "الفرق بين البيع والشراء",
     gapOfficial: "الفرق عن السعر الرسمي",
     marketUpdated: "تحديث المصدر",
+    historyTitle: "تاريخ السعر",
+    historyRanges: { "12h": "14 يوم", "1d": "60 يوم", "1w": "10 أسابيع" },
+    historySpan: (days) => `خلال ${days} يوم`,
+    historyError: "تعذّر تحميل تاريخ السعر.",
+    historyTable: "جدول",
+    historyChart: "الرسم",
+    historyDate: "التاريخ",
+    historyPrice: "السعر",
+    historyLabel: (from, to, low, high) => `سعر السوق من ${from} إلى ${to}، بين ${low} و ${high} دينار`,
     shareMarket: (mid, gap) => `متوسط السوق: ${mid}${gap ? ` · ${gap} عن السعر الرسمي` : ""}`,
     goldFootnote: "السعر العالمي للذهب لكل مثقال (5 غرامات)، محوّلاً إلى الدينار بسعر بيع الدولار في بغداد. قد يختلف عن أسعار محلات الذهب.",
     source: "المصدر:",
@@ -143,6 +155,15 @@ const STR = {
     marketSpread: "Buy/sell spread",
     gapOfficial: "Gap vs official rate",
     marketUpdated: "Source updated",
+    historyTitle: "Price history",
+    historyRanges: { "12h": "14 days", "1d": "60 days", "1w": "10 weeks" },
+    historySpan: (days) => `over ${days} days`,
+    historyError: "Couldn't load the price history.",
+    historyTable: "Table",
+    historyChart: "Chart",
+    historyDate: "Date",
+    historyPrice: "Price",
+    historyLabel: (from, to, low, high) => `Market price from ${from} to ${to}, between ${low} and ${high} dinars`,
     shareMarket: (mid, gap) => `Market average: ${mid}${gap ? ` · ${gap} vs the official rate` : ""}`,
     goldFootnote: "World gold price per mithqal (5 g), converted to dinars at Baghdad's dollar sell rate. Gold shops may charge more.",
     source: "Source:",
@@ -261,6 +282,10 @@ const state = {
   gold: null, // { price: USD per troy ounce, updatedAt }
   market: null, // Iraq market average from usdiqd.com (see src/rates.js fetchMarket)
   marketFailed: false,
+  historyTf: HISTORY_TFS.includes(prefs.historyTf) ? prefs.historyTf : "1d",
+  history: {}, // tf -> { points: [{ t, mid }], at }
+  historyFailed: {},
+  historyTable: false,
   goldAt: 0,
   goldFailed: false,
   loading: false,
@@ -273,7 +298,7 @@ function detectLang() {
 }
 
 function savePrefs() {
-  writeJSON(PREFS_KEY, { lang: state.lang, theme: state.theme, tab: state.tab });
+  writeJSON(PREFS_KEY, { lang: state.lang, theme: state.theme, tab: state.tab, historyTf: state.historyTf });
 }
 
 function readJSON(key) {
@@ -456,6 +481,20 @@ function buildCards() {
           <strong class="stat-pct num" data-role="gapPct"></strong>
         </div>
       </div>
+      <div class="market-history">
+        <div class="history-head">
+          <span class="history-title" data-i18n="historyTitle"></span>
+          <div class="history-tfs" role="radiogroup">
+            ${HISTORY_TFS.map((tf) => `<button type="button" role="radio" data-tf="${tf}"></button>`).join("")}
+          </div>
+        </div>
+        <div class="history-chart" data-role="hchart"></div>
+        <div class="history-table" data-role="htable" hidden></div>
+        <div class="history-foot">
+          <span class="history-change" data-role="hchange"></span>
+          <button class="link-btn" type="button" data-role="htoggle"></button>
+        </div>
+      </div>
       <div class="market-updated" data-role="updated"></div>
     </section>`;
 
@@ -464,7 +503,8 @@ function buildCards() {
   els.market = {
     card: marketCard,
     main: marketCard.querySelector(".market-main"),
-    ...Object.fromEntries(["mid", "per100", "pre", "post", "change", "sell", "buy", "spread", "spreadPct", "gap", "gapPct", "updated"].map((r) => [r, mq(r)])),
+    tfButtons: [...marketCard.querySelectorAll(".history-tfs button")],
+    ...Object.fromEntries(["mid", "per100", "pre", "post", "change", "sell", "buy", "spread", "spreadPct", "gap", "gapPct", "updated", "hchart", "htable", "hchange", "htoggle"].map((r) => [r, mq(r)])),
   };
 
   els.cardEls = Object.fromEntries(CITIES.map((c) => {
@@ -626,6 +666,7 @@ function renderMarket({ animate = false } = {}) {
     r.change.className = "delta sk";
     r.change.innerHTML = "<span>00 · 0.00%</span>";
     r.updated.textContent = "";
+    renderHistory();
     return;
   }
 
@@ -654,6 +695,7 @@ function renderMarket({ animate = false } = {}) {
     ? `${arrow(dir)}<span class="num">${fmt.format(Math.abs(m.change))}</span><span class="d-sep">·</span><span class="num">${Math.abs(m.changePct || 0).toFixed(2)}%</span>`
     : `<span>${s.unchanged}</span>`;
   renderMarketUpdated();
+  renderHistory();
   if (animate && before != null && before !== m.mid) restartAnimation(r.main, m.mid > before ? "flash-up" : "flash-down");
 }
 
@@ -661,6 +703,188 @@ function renderMarket({ animate = false } = {}) {
 function renderMarketUpdated() {
   const at = Date.parse(state.market?.updatedAt || "");
   els.market.updated.textContent = Number.isFinite(at) ? `🕐 ${t().marketUpdated} ${relativeTime(at)}` : "";
+}
+
+/* ---------- Market price history (usdiqd.com) ---------- */
+
+const historyLoading = {};
+
+async function loadHistory(tf = state.historyTf, { force = false } = {}) {
+  const entry = state.history[tf];
+  if ((!force && entry && Date.now() - entry.at < HISTORY_MAX_AGE_MS) || historyLoading[tf]) return;
+  historyLoading[tf] = true;
+  try {
+    const json = await getJSON(`${HISTORY_API_URL}?tf=${tf}`);
+    if (!(json.points?.length >= 2)) throw new Error("not enough history");
+    state.history[tf] = { points: json.points, at: Date.now() };
+    state.historyFailed[tf] = false;
+    writeJSON(`borsa:history:${tf}`, state.history[tf]);
+  } catch (err) {
+    console.error("Failed to load price history:", err);
+    state.historyFailed[tf] = true;
+  } finally {
+    historyLoading[tf] = false;
+    if (tf === state.historyTf) renderHistory();
+  }
+}
+
+function selectHistoryTf(tf) {
+  if (tf === state.historyTf) return;
+  haptic.select();
+  state.historyTf = tf;
+  savePrefs();
+  renderHistory();
+  loadHistory(tf);
+}
+
+const historyDate = (t, withTime) => new Intl.DateTimeFormat(isRTL() ? "ar-IQ-u-nu-latn" : "en-GB", {
+  timeZone: "Asia/Baghdad",
+  day: "numeric",
+  month: "short",
+  ...(withTime ? { hour: "numeric", minute: "2-digit" } : {}),
+}).format(t);
+
+function renderHistory() {
+  const s = t();
+  const r = els.market;
+  const tf = state.historyTf;
+  const entry = state.history[tf];
+  r.tfButtons.forEach((b) => {
+    b.textContent = s.historyRanges[b.dataset.tf];
+    b.setAttribute("aria-checked", String(b.dataset.tf === tf));
+  });
+  r.htoggle.textContent = state.historyTable ? s.historyChart : s.historyTable;
+  r.htoggle.hidden = !entry;
+
+  if (!entry) {
+    r.hchange.textContent = state.historyFailed[tf] ? s.historyError : "";
+    r.hchange.className = "history-change";
+    r.hchart.hidden = false;
+    r.htable.hidden = true;
+    r.hchart.replaceChildren(Object.assign(document.createElement("div"), { className: state.historyFailed[tf] ? "history-empty" : "history-empty sk" }));
+    return;
+  }
+
+  const pts = entry.points;
+  const first = pts[0];
+  const last = pts[pts.length - 1];
+  const diff = last.mid - first.mid;
+  const pct = (diff / first.mid) * 100;
+  const days = Math.max(1, Math.round((last.t - first.t) / 86_400_000));
+  const dir = Math.sign(Math.round(diff * 100));
+  r.hchange.className = `history-change ${dir > 0 ? "up" : dir < 0 ? "down" : ""}`;
+  // Amount, currency and percentage as separate pieces so each keeps its own direction
+  // (an Arabic currency inside a left-to-right number span gets reordered).
+  const sign = dir > 0 ? "+" : dir < 0 ? "−" : "";
+  r.hchange.innerHTML = `<span class="h-val">${dir ? arrow(dir) : ""}<span class="num">${sign}${fmt.format(Math.abs(diff))}</span><span>${s.iqd}</span><span class="d-sep">·</span><span class="num">${sign}${Math.abs(pct).toFixed(2)}%</span></span><span>${s.historySpan(days)}</span>`;
+
+  r.hchart.hidden = state.historyTable;
+  r.htable.hidden = !state.historyTable;
+  if (state.historyTable) renderHistoryTable(pts, tf);
+  else drawHistory();
+}
+
+function renderHistoryTable(pts, tf) {
+  const s = t();
+  const table = document.createElement("table");
+  const head = table.createTHead().insertRow();
+  for (const label of [s.historyDate, s.historyPrice]) head.appendChild(Object.assign(document.createElement("th"), { textContent: label }));
+  const body = table.createTBody();
+  for (const p of [...pts].reverse()) {
+    const row = body.insertRow();
+    row.insertCell().textContent = historyDate(p.t, tf === "12h");
+    Object.assign(row.insertCell(), { textContent: fmt.format(p.mid), className: "num" });
+  }
+  els.market.htable.replaceChildren(table);
+}
+
+// One series (the market middle price): 2px line over a soft wash, clean ticks, end dot,
+// and a crosshair readout that follows the pointer or finger. Time runs left to right in
+// both languages, as in any price chart.
+function drawHistory() {
+  const box = els.market.hchart;
+  const entry = state.history[state.historyTf];
+  const width = Math.round(box.clientWidth);
+  if (!entry || !width) return;
+  const s = t();
+  const pts = entry.points;
+  const withTime = state.historyTf === "12h";
+  const height = 150;
+  const m = { top: 10, right: 10, bottom: 22, left: 46 };
+  const iw = width - m.left - m.right;
+  const ih = height - m.top - m.bottom;
+
+  const values = pts.map((p) => p.mid);
+  const lo = Math.min(...values);
+  const hi = Math.max(...values);
+  const rawStep = Math.max(1, (hi - lo) / 3);
+  const mag = 10 ** Math.floor(Math.log10(rawStep));
+  const step = [1, 2, 2.5, 5, 10].map((k) => k * mag).find((v) => v >= rawStep) || 10 * mag;
+  const yMin = Math.floor(lo / step) * step;
+  const yMax = Math.max(yMin + step, Math.ceil(hi / step) * step);
+  const x = (i) => m.left + (i / (pts.length - 1)) * iw;
+  const y = (v) => m.top + ih - ((v - yMin) / (yMax - yMin)) * ih;
+
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs, text) => {
+    const n = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+    if (text != null) n.textContent = text;
+    return n;
+  };
+  const svg = el("svg", {
+    class: "history-svg", viewBox: `0 0 ${width} ${height}`, width, height, role: "img", tabindex: "0",
+    "aria-label": s.historyLabel(historyDate(pts[0].t, withTime), historyDate(pts[pts.length - 1].t, withTime), fmt.format(lo), fmt.format(hi)),
+  });
+  for (let v = yMin; v <= yMax + step / 2; v += step) {
+    svg.append(el("line", { class: "h-grid", x1: m.left, x2: m.left + iw, y1: y(v), y2: y(v) }));
+    svg.append(el("text", { class: "h-tick", x: m.left - 6, y: y(v) + 4, "text-anchor": "end" }, fmtInt.format(v)));
+  }
+  const line = values.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("");
+  svg.append(el("path", { class: "h-area", d: `${line}L${x(pts.length - 1).toFixed(1)},${m.top + ih}L${m.left},${m.top + ih}Z` }));
+  svg.append(el("path", { class: "h-line", d: line }));
+  svg.append(el("text", { class: "h-tick", x: m.left, y: height - 5, "text-anchor": "start" }, historyDate(pts[0].t, false)));
+  svg.append(el("text", { class: "h-tick", x: m.left + iw, y: height - 5, "text-anchor": "end" }, historyDate(pts[pts.length - 1].t, false)));
+  const li = pts.length - 1;
+  svg.append(el("circle", { class: "h-dot", cx: x(li), cy: y(values[li]), r: 4 }));
+
+  // Readout
+  const hair = el("line", { class: "h-hair", y1: m.top, y2: m.top + ih, visibility: "hidden" });
+  const focus = el("circle", { class: "h-dot", r: 4, visibility: "hidden" });
+  svg.append(hair, focus);
+  const tip = document.createElement("div");
+  tip.className = "history-tip";
+  tip.hidden = true;
+  let index = li;
+  const show = (i) => {
+    index = i;
+    hair.setAttribute("x1", x(i)); hair.setAttribute("x2", x(i)); hair.setAttribute("visibility", "visible");
+    focus.setAttribute("cx", x(i)); focus.setAttribute("cy", y(values[i])); focus.setAttribute("visibility", "visible");
+    tip.replaceChildren(
+      Object.assign(document.createElement("strong"), { className: "num", textContent: `${fmt.format(values[i])} ${s.iqd}` }),
+      Object.assign(document.createElement("span"), { textContent: historyDate(pts[i].t, withTime) }),
+    );
+    tip.hidden = false;
+    const left = Math.min(Math.max(x(i) - tip.offsetWidth / 2, 0), width - tip.offsetWidth);
+    tip.style.left = `${left}px`;
+  };
+  const hide = () => { hair.setAttribute("visibility", "hidden"); focus.setAttribute("visibility", "hidden"); tip.hidden = true; };
+  const indexAt = (clientX) => {
+    const rect = svg.getBoundingClientRect();
+    const px = ((clientX - rect.left) / rect.width) * width;
+    return Math.max(0, Math.min(li, Math.round(((px - m.left) / iw) * li)));
+  };
+  svg.addEventListener("pointerdown", (e) => show(indexAt(e.clientX)));
+  svg.addEventListener("pointermove", (e) => show(indexAt(e.clientX)));
+  svg.addEventListener("pointerleave", (e) => { if (e.pointerType === "mouse") hide(); });
+  svg.addEventListener("focus", () => show(index));
+  svg.addEventListener("blur", hide);
+  svg.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    show(Math.max(0, Math.min(li, index + (e.key === "ArrowRight" ? 1 : -1))));
+  });
+  box.replaceChildren(svg, tip);
 }
 
 function applyTab() {
@@ -822,6 +1046,7 @@ async function load({ manual = false } = {}) {
     haptic.error();
   }
   if (!document.hidden) scheduleRefresh();
+  if (state.market) loadHistory();
 }
 
 function onFreshData(previous, hadGold) {
@@ -988,7 +1213,8 @@ function contentRows(tab) {
       qAll("#marketCard .city-head"),
       qAll("#marketCard .market-main"),
       qAll("#marketCard .market-sides .price"),
-      qAll("#marketCard .market-stats, #marketCard .market-updated"),
+      qAll("#marketCard .market-stats"),
+      qAll("#marketCard .market-history, #marketCard .market-updated"),
     );
   }
   return rows;
@@ -1117,6 +1343,20 @@ function bindEvents() {
     if (btn) selectTab(btn.dataset.tab);
   });
   els.shareBtn.addEventListener("click", share);
+  els.market.tfButtons.forEach((b) => b.addEventListener("click", () => selectHistoryTf(b.dataset.tf)));
+  els.market.htoggle.addEventListener("click", () => {
+    state.historyTable = !state.historyTable;
+    renderHistory();
+  });
+  // Redraw the chart to the card's width (first layout, rotation, desktop resize).
+  let chartWidth = 0;
+  new ResizeObserver(([entry]) => {
+    const w = Math.round(entry.contentRect.width);
+    if (w && w !== chartWidth) {
+      chartWidth = w;
+      if (!state.historyTable) drawHistory();
+    }
+  }).observe(els.market.hchart);
   els.legalBtn.addEventListener("click", openLegal);
   els.legalSheet.addEventListener("click", (e) => {
     if (e.target.closest("[data-close]")) closeLegal();
@@ -1172,6 +1412,10 @@ function init() {
   if (cached?.data && Date.now() - cached.t < CACHE_MAX_AGE_MS) {
     state.data = cached.data;
     state.updatedAt = cached.t;
+  }
+  for (const tf of HISTORY_TFS) {
+    const cachedHistory = readJSON(`borsa:history:${tf}`);
+    if (cachedHistory?.points?.length >= 2 && Date.now() - cachedHistory.at < CACHE_MAX_AGE_MS) state.history[tf] = cachedHistory;
   }
   const cachedMarket = readJSON(MARKET_CACHE_KEY);
   if (cachedMarket?.market && Date.now() - cachedMarket.t < CACHE_MAX_AGE_MS) state.market = cachedMarket.market;

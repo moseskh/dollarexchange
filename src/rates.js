@@ -7,6 +7,10 @@ const GOLD_UPSTREAM = "https://api.gold-api.com/price/XAU";
 // Iraq-wide parallel-market average and its gap from the official rate, updated every few minutes.
 // Its responses ask for 60s caching (Cache-Control: max-age=60), which we match.
 const MARKET_UPSTREAM = "https://usdiqd.com/api/rates";
+// Price history for the same market. Ranges: 12h (14 days, every 12 hours), 1d (60 days,
+// daily), 1w (weekly). Its responses ask for 5-minute caching.
+const MARKET_HISTORY_UPSTREAM = "https://usdiqd.com/api/history";
+export const HISTORY_RANGES = new Set(["12h", "1d", "1w"]);
 
 export const CITY_KEYS = ["b", "s", "n"]; // Baghdad, Basra, Erbil
 export const KARATS = [24, 21, 18];
@@ -70,6 +74,23 @@ export async function fetchMarket() {
     change: num(data.change?.per_100) == null ? null : num(data.change.per_100) / 100,
     changePct: num(data.change?.pct),
   };
+}
+
+// Trimmed to [{ t: ms, mid }] in time order, since the chart plots the middle price.
+export async function fetchMarketHistory(tf) {
+  if (!HISTORY_RANGES.has(tf)) throw new RangeError(`unsupported range: ${tf}`);
+  const res = await fetch(`${MARKET_HISTORY_UPSTREAM}?tf=${tf}`, {
+    headers: UPSTREAM_HEADERS,
+    cf: { cacheTtl: 300, cacheEverything: true },
+  });
+  if (!res.ok) throw new Error(`history upstream returned ${res.status}`);
+  const data = await res.json();
+  const points = (Array.isArray(data.points) ? data.points : [])
+    .map((p) => ({ t: Date.parse(p.t), mid: Number(p.mid) }))
+    .filter((p) => Number.isFinite(p.t) && p.mid > 0)
+    .sort((a, b) => a.t - b.t);
+  if (points.length < 2) throw new Error("not enough history");
+  return { tf, points };
 }
 
 // USD price of one Iraqi mithqal (5 g) of gold at the given karat.

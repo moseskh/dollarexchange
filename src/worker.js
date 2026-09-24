@@ -8,7 +8,7 @@
 //   ANALYTICS_SALT      random string used to hash user ids in analytics
 //   DASHBOARD_PASSWORD  password for the /admin dashboard
 
-import { fetchGold, fetchMarket, fetchRates } from "./rates.js";
+import { fetchGold, fetchMarket, fetchMarketHistory, fetchRates } from "./rates.js";
 import { handleUpdate, runScheduled, setupBot } from "./bot.js";
 import { dashboardStats, handleAppEvent } from "./analytics.js";
 import dashboardHtml from "./dashboard.html";
@@ -19,6 +19,7 @@ export default {
     if (url.pathname === "/api/rates") return priceRoute(fetchRates);
     if (url.pathname === "/api/gold") return priceRoute(fetchGold);
     if (url.pathname === "/api/market") return priceRoute(fetchMarket);
+    if (url.pathname === "/api/market/history") return priceRoute(() => fetchMarketHistory(url.searchParams.get("tf") || "1d"));
     if (url.pathname === "/api/event" && request.method === "POST") return handleAppEvent(request, env);
     if (url.pathname === "/admin" || url.pathname.startsWith("/admin/")) return admin(request, env, url);
     if (url.pathname === "/telegram/webhook" && request.method === "POST") return webhook(request, env);
@@ -35,7 +36,7 @@ async function priceRoute(load) {
   try {
     return json(await load(), 200);
   } catch (err) {
-    return json({ error: err.message }, 502);
+    return json({ error: err.message }, err instanceof RangeError ? 400 : 502);
   }
 }
 
