@@ -29,7 +29,7 @@ const GOLD_RATE_CITY = "b";
 
 const STR = {
   ar: {
-    appName: "بورصة الدولار",
+    appName: "بورصة العراق",
     langToggle: "EN",
     langLabel: "English",
     theme: "الوضع الداكن",
@@ -99,7 +99,7 @@ const STR = {
     goldShareNote: "السعر العالمي محوّلاً بسعر صرف بغداد",
   },
   en: {
-    appName: "Dollar Borsa",
+    appName: "Iraq Exchange",
     langToggle: "ع",
     langLabel: "العربية",
     theme: "Dark mode",

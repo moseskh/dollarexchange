@@ -13,16 +13,33 @@ const GOLD_UPSTREAM = "https://api.gold-api.com/price/XAU";
 //   WEBHOOK_SECRET  random string Telegram sends back with every update
 const BOT_TEXT = {
   ar: {
-    welcome: "💵 أهلاً بك في بورصة الدولار\nأسعار صرف الدولار مقابل الدينار العراقي مباشرة من بغداد والبصرة وأربيل، وأسعار الذهب لكل مثقال.\n\nاضغط الزر أدناه لفتح التطبيق 👇",
+    welcome: "💵 أهلاً بك في بورصة العراق\nأسعار صرف الدولار مقابل الدينار العراقي مباشرة من بغداد والبصرة وأربيل، وأسعار الذهب لكل مثقال.\n\nاضغط الزر أدناه لفتح التطبيق 👇",
     button: "افتح التطبيق",
     menu: "الأسعار",
   },
   en: {
-    welcome: "💵 Welcome to Dollar Exchange\nLive USD → IQD rates for Baghdad, Basra and Erbil, plus gold prices per mithqal.\n\nTap the button below to open the app 👇",
+    welcome: "💵 Welcome to Iraq Exchange\nLive USD → IQD rates for Baghdad, Basra and Erbil, plus gold prices per mithqal.\n\nTap the button below to open the app 👇",
     button: "Open the app",
     menu: "Rates",
   },
 };
+
+// Bot profile in Telegram: the default (no language_code) is Arabic, with an English
+// version for users whose Telegram is in English. Applied by /telegram/setup.
+const BOT_PROFILE = [
+  {
+    language_code: "",
+    name: "بورصة العراق",
+    short_description: "أسعار صرف الدولار والذهب في العراق مباشرة",
+    description: "💵 أسعار صرف الدولار مقابل الدينار العراقي مباشرة من بغداد والبصرة وأربيل.\n🪙 أسعار الذهب لكل مثقال بالدينار والدولار.",
+  },
+  {
+    language_code: "en",
+    name: "Iraq Exchange",
+    short_description: "Live dollar and gold rates in Iraq",
+    description: "💵 Live USD → IQD rates for Baghdad, Basra and Erbil.\n🪙 Gold prices per mithqal in dinars and dollars.",
+  },
+];
 
 export default {
   async fetch(request, env) {
@@ -102,7 +119,8 @@ async function handleUpdate(request, env) {
   return new Response("ok");
 }
 
-// One-off registration: points Telegram at the webhook and sets the default menu button.
+// One-off registration: points Telegram at the webhook, sets the default menu button,
+// and applies the bot's name and descriptions.
 // Call with: POST /telegram/setup, header "Authorization: Bearer <WEBHOOK_SECRET>".
 async function setupBot(request, env) {
   if (!env.BOT_TOKEN || !env.WEBHOOK_SECRET) {
@@ -121,8 +139,20 @@ async function setupBot(request, env) {
     await telegram(env, "setChatMenuButton", {
       menu_button: { type: "web_app", text: BOT_TEXT.ar.menu, web_app: { url: origin } },
     });
+    // Telegram rate-limits profile changes, so a failure here is reported, not fatal.
+    let profile = "updated";
+    try {
+      for (const { language_code, name, short_description, description } of BOT_PROFILE) {
+        const lang = language_code ? { language_code } : {};
+        await telegram(env, "setMyName", { name, ...lang });
+        await telegram(env, "setMyShortDescription", { short_description, ...lang });
+        await telegram(env, "setMyDescription", { description, ...lang });
+      }
+    } catch (err) {
+      profile = err.message;
+    }
     const [me, info] = await Promise.all([telegram(env, "getMe", {}), telegram(env, "getWebhookInfo", {})]);
-    return json({ ok: true, bot: me.username, webhook: info.url, pending: info.pending_update_count }, 200);
+    return json({ ok: true, bot: me.username, name: me.first_name, webhook: info.url, pending: info.pending_update_count, profile }, 200);
   } catch (err) {
     return json({ error: err.message }, 502);
   }

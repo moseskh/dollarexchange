@@ -1,4 +1,4 @@
-# Dollar Exchange
+# Iraq Exchange (بورصة العراق)
 
 A Telegram Mini App that shows the USD → IQD borsa rates (sell / buy) for Baghdad, Basra and Erbil, using data from [iraqborsa.com](https://iraqborsa.com), plus gold prices per mithqal.
 

@@ -330,6 +330,18 @@ svg { display: block; flex-shrink: 0; }
   font-size: 21px;
   font-weight: 700;
   flex-shrink: 0;
+  position: relative;
+}
+.logo::after {
+  content: "";
+  position: absolute;
+  inset-inline-end: -4px;
+  bottom: -4px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #ffe49a 0%, #f5b53d 55%, #d4930f 100%);
+  box-shadow: 0 0 0 2.5px var(--c-bg), 0 2px 6px rgba(212, 147, 15, 0.35);
 }
 @supports (color: color-mix(in srgb, red, blue)) {
   .logo {
