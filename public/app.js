@@ -437,23 +437,9 @@ const els = {
 };
 
 function buildCards() {
-  els.usdPanel.innerHTML = CITIES.map((c, i) => `
-    <section class="card city" data-city="${c.key}" style="--i:${i + 1}">
-      <div class="city-head">
-        <h2 class="city-name" data-role="name"></h2>
-        <span class="spread"><span data-i18n="spread"></span> <strong class="num" data-role="spread"></strong> <span data-i18n="iqd"></span></span>
-      </div>
-      <div class="prices">
-        ${KINDS.map((kind) => `
-          <div class="price" data-kind="${kind}">
-            <div class="price-label"><span data-i18n="${kind}"></span>${STAR}</div>
-            <div class="price-value"><span class="num" data-role="value"></span></div>
-            <div class="delta" data-role="delta"></div>
-            <div class="price-sub"><span data-role="pre"></span><span class="num" data-role="per100"></span><span data-role="post"></span></div>
-          </div>`).join("")}
-      </div>
-    </section>`).join("") + `
-    <section class="card market-card" id="marketCard" style="--i:4">
+  // The market average leads: one Iraq-wide price is what most people look for first.
+  els.usdPanel.innerHTML = `
+    <section class="card market-card" id="marketCard" style="--i:1">
       <div class="city-head">
         <h2 class="city-name" data-i18n="marketTitle"></h2>
         <a class="spread source-pill ext-link" href="https://usdiqd.com" target="_blank" rel="noopener">usdiqd.com</a>
@@ -496,7 +482,22 @@ function buildCards() {
         </div>
       </div>
       <div class="market-updated" data-role="updated"></div>
-    </section>`;
+    </section>` + CITIES.map((c, i) => `
+    <section class="card city" data-city="${c.key}" style="--i:${i + 2}">
+      <div class="city-head">
+        <h2 class="city-name" data-role="name"></h2>
+        <span class="spread"><span data-i18n="spread"></span> <strong class="num" data-role="spread"></strong> <span data-i18n="iqd"></span></span>
+      </div>
+      <div class="prices">
+        ${KINDS.map((kind) => `
+          <div class="price" data-kind="${kind}">
+            <div class="price-label"><span data-i18n="${kind}"></span>${STAR}</div>
+            <div class="price-value"><span class="num" data-role="value"></span></div>
+            <div class="delta" data-role="delta"></div>
+            <div class="price-sub"><span data-role="pre"></span><span class="num" data-role="per100"></span><span data-role="post"></span></div>
+          </div>`).join("")}
+      </div>
+    </section>`).join("");
 
   const marketCard = els.usdPanel.querySelector("#marketCard");
   const mq = (r) => marketCard.querySelector(`[data-role="${r}"]`);
@@ -1207,7 +1208,7 @@ function contentRows(tab) {
     ];
   }
   if (!els.errorView.hidden) return [[els.errorView]];
-  const rows = qAll(".city").map((card) => qAll(".city-head, .price", card));
+  const rows = [];
   if (!els.market.card.hidden) {
     rows.push(
       qAll("#marketCard .city-head"),
@@ -1217,6 +1218,7 @@ function contentRows(tab) {
       qAll("#marketCard .market-history, #marketCard .market-updated"),
     );
   }
+  rows.push(...qAll(".city").map((card) => qAll(".city-head, .price", card)));
   return rows;
 }
 
