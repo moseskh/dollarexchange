@@ -14,6 +14,10 @@ const MARKET_CACHE_KEY = "borsa:market";
 const HISTORY_API_URL = "/api/market/history";
 const HISTORY_TFS = ["12h", "1d", "1w"]; // 14 days every 12h · 60 days daily · ~10 weeks weekly
 const HISTORY_MAX_AGE_MS = 5 * 60_000; // the source updates its history every few minutes at most
+const GOLD_HISTORY_API_URL = "/api/gold/history";
+const GOLD_HISTORY_CACHE_KEY = "borsa:goldHistory";
+const GOLD_HISTORY_DAYS = { "12h": 14, "1d": 60, "1w": 70 }; // the dollar chart's ranges, from daily points
+const GOLD_HISTORY_MAX_AGE_MS = 30 * 60_000; // the Worker refreshes it hourly
 const PREFS_KEY = "borsa:prefs";
 // Link included when sharing rates; opens the Mini App directly in Telegram.
 // The start parameter lets analytics count opens that came from a share.
@@ -71,6 +75,9 @@ const STR = {
     historyRanges: { "12h": "14 يوم", "1d": "60 يوم", "1w": "10 أسابيع" },
     historySpan: (days) => `خلال ${days} يوم`,
     historyError: "تعذّر تحميل تاريخ السعر.",
+    goldHistoryTitle: "تاريخ سعر عيار 21",
+    goldHistoryNote: "لكل مثقال، بمتوسط سعر الدولار في السوق لكل يوم.",
+    goldHistoryLabel: (from, to, low, high) => `سعر مثقال الذهب عيار 21 من ${from} إلى ${to}، بين ${low} و ${high} دينار`,
     historyLabel: (from, to, low, high) => `سعر السوق من ${from} إلى ${to}، بين ${low} و ${high} دينار`,
     shareMarket: (mid, gap) => `متوسط السوق: ${mid}${gap ? ` · ${gap} عن السعر الرسمي` : ""}`,
     goldFootnote: "السعر العالمي للذهب لكل مثقال (5 غرامات)، محوّلاً إلى الدينار بسعر بيع الدولار في بغداد. قد يختلف عن أسعار محلات الذهب.",
@@ -155,6 +162,9 @@ const STR = {
     historyRanges: { "12h": "14 days", "1d": "60 days", "1w": "10 weeks" },
     historySpan: (days) => `over ${days} days`,
     historyError: "Couldn't load the price history.",
+    goldHistoryTitle: "21K price history",
+    goldHistoryNote: "Per mithqal, at each day's market dollar rate.",
+    goldHistoryLabel: (from, to, low, high) => `21K gold per mithqal from ${from} to ${to}, between ${low} and ${high} dinars`,
     historyLabel: (from, to, low, high) => `Market price from ${from} to ${to}, between ${low} and ${high} dinars`,
     shareMarket: (mid, gap) => `Market average: ${mid}${gap ? ` · ${gap} vs the official rate` : ""}`,
     goldFootnote: "World gold price per mithqal (5 g), converted to dinars at Baghdad's dollar sell rate. Gold shops may charge more.",
@@ -277,6 +287,8 @@ const state = {
   historyTf: HISTORY_TFS.includes(prefs.historyTf) ? prefs.historyTf : "1d",
   history: {}, // tf -> { points: [{ t, mid }], at }
   historyFailed: {},
+  goldHistory: null, // { points: [{ t, mid: 21K mithqal in IQD }], at }
+  goldHistoryFailed: false,
   goldAt: 0,
   goldFailed: false,
   loading: false,
@@ -420,12 +432,27 @@ const els = {
   legend: $("legend"),
   footnote: $("footnote"),
   goldSource: $("goldSource"),
-  marketSource: $("marketSource"),
   toast: $("toast"),
   legalBtn: $("legalBtn"),
   legalSheet: $("legalSheet"),
   legalBody: $("legalBody"),
 };
+
+// A price history chart with its range buttons; the market card and the gold card each have one.
+const historyBlock = (kind, titleKey) => `
+  <div class="history-block" data-history="${kind}">
+    <div class="history-head">
+      <span class="history-title" data-i18n="${titleKey}"></span>
+      <div class="history-tfs" role="radiogroup">
+        ${HISTORY_TFS.map((tf) => `<button type="button" role="radio" data-tf="${tf}"></button>`).join("")}
+      </div>
+    </div>
+    <div class="history-chart" data-role="hchart"></div>
+    <div class="history-foot">
+      <span class="history-change" data-role="hchange"></span>
+    </div>${kind === "gold" ? `
+    <p class="history-note" data-i18n="goldHistoryNote"></p>` : ""}
+  </div>`;
 
 function buildCards() {
   // The market average leads: one Iraq-wide price is what most people look for first.
@@ -458,18 +485,7 @@ function buildCards() {
           <strong class="stat-pct num" data-role="gapPct"></strong>
         </div>
       </div>
-      <div class="market-history">
-        <div class="history-head">
-          <span class="history-title" data-i18n="historyTitle"></span>
-          <div class="history-tfs" role="radiogroup">
-            ${HISTORY_TFS.map((tf) => `<button type="button" role="radio" data-tf="${tf}"></button>`).join("")}
-          </div>
-        </div>
-        <div class="history-chart" data-role="hchart"></div>
-        <div class="history-foot">
-          <span class="history-change" data-role="hchange"></span>
-        </div>
-      </div>
+      ${historyBlock("market", "historyTitle")}
       <div class="market-updated" data-role="updated"></div>
     </section>` + CITIES.map((c, i) => `
     <section class="card city" data-city="${c.key}" style="--i:${i + 2}">
@@ -493,8 +509,7 @@ function buildCards() {
   els.market = {
     card: marketCard,
     main: marketCard.querySelector(".market-main"),
-    tfButtons: [...marketCard.querySelectorAll(".history-tfs button")],
-    ...Object.fromEntries(["mid", "per100", "pre", "post", "change", "sell", "buy", "spread", "spreadPct", "gap", "gapPct", "updated", "hchart", "hchange"].map((r) => [r, mq(r)])),
+    ...Object.fromEntries(["mid", "per100", "pre", "post", "change", "sell", "buy", "spread", "spreadPct", "gap", "gapPct", "updated"].map((r) => [r, mq(r)])),
   };
 
   els.cardEls = Object.fromEntries(CITIES.map((c) => {
@@ -521,6 +536,17 @@ function buildCards() {
     const row = els.karats.querySelector(`[data-karat="${k}"]`);
     const q = (r) => row.querySelector(`[data-role="${r}"]`);
     return [k, { row, label: q("label"), iqd: q("iqd"), usd: q("usd") }];
+  }));
+
+  $("goldCard").insertAdjacentHTML("beforeend", historyBlock("gold", "goldHistoryTitle"));
+  els.charts = Object.fromEntries(["market", "gold"].map((kind) => {
+    const block = document.querySelector(`[data-history="${kind}"]`);
+    return [kind, {
+      block,
+      tfButtons: [...block.querySelectorAll(".history-tfs button")],
+      hchart: block.querySelector('[data-role="hchart"]'),
+      hchange: block.querySelector('[data-role="hchange"]'),
+    }];
   }));
 }
 
@@ -638,6 +664,7 @@ function renderGold({ animate = false } = {}) {
   }
 
   els.goldError.hidden = !goldDown;
+  renderChart("gold");
 }
 
 // Which panel, footer notes and share state go with the current tab.
@@ -656,7 +683,7 @@ function renderMarket({ animate = false } = {}) {
     r.change.className = "delta sk";
     r.change.innerHTML = "<span>00 · 0.00%</span>";
     r.updated.textContent = "";
-    renderHistory();
+    renderChart("market");
     return;
   }
 
@@ -685,7 +712,7 @@ function renderMarket({ animate = false } = {}) {
     ? `${arrow(dir)}<span class="num">${fmt.format(Math.abs(m.change))}</span><span class="d-sep">·</span><span class="num">${Math.abs(m.changePct || 0).toFixed(2)}%</span>`
     : `<span>${s.unchanged}</span>`;
   renderMarketUpdated();
-  renderHistory();
+  renderChart("market");
   if (animate && before != null && before !== m.mid) restartAnimation(r.main, m.mid > before ? "flash-up" : "flash-down");
 }
 
@@ -695,7 +722,7 @@ function renderMarketUpdated() {
   els.market.updated.textContent = Number.isFinite(at) ? `🕐 ${t().marketUpdated} ${relativeTime(at)}` : "";
 }
 
-/* ---------- Market price history (usdiqd.com) ---------- */
+/* ---------- Price history charts (dollar market and gold) ---------- */
 
 const historyLoading = {};
 
@@ -714,10 +741,32 @@ async function loadHistory(tf = state.historyTf, { force = false } = {}) {
     state.historyFailed[tf] = true;
   } finally {
     historyLoading[tf] = false;
-    if (tf === state.historyTf) renderHistory();
+    if (tf === state.historyTf) renderChart("market");
   }
 }
 
+let goldHistoryLoading = false;
+
+async function loadGoldHistory() {
+  const entry = state.goldHistory;
+  if ((entry && Date.now() - entry.at < GOLD_HISTORY_MAX_AGE_MS) || goldHistoryLoading) return;
+  goldHistoryLoading = true;
+  try {
+    const json = await getJSON(GOLD_HISTORY_API_URL);
+    if (!(json.points?.length >= 2)) throw new Error("not enough history");
+    state.goldHistory = { points: json.points, at: Date.now() };
+    state.goldHistoryFailed = false;
+    writeJSON(GOLD_HISTORY_CACHE_KEY, state.goldHistory);
+  } catch (err) {
+    console.error("Failed to load gold price history:", err);
+    state.goldHistoryFailed = true;
+  } finally {
+    goldHistoryLoading = false;
+    renderChart("gold");
+  }
+}
+
+// Both charts share the range, so the dollar and gold views stay comparable.
 function selectHistoryTf(tf) {
   if (tf === state.historyTf) return;
   haptic.select();
@@ -727,6 +776,19 @@ function selectHistoryTf(tf) {
   loadHistory(tf);
 }
 
+// The points a chart shows for the current range. The gold history is daily, cut to the
+// same spans as the dollar chart.
+function historyPoints(kind) {
+  if (kind === "market") return state.history[state.historyTf]?.points ?? null;
+  const all = state.goldHistory?.points;
+  if (!all) return null;
+  const from = all[all.length - 1].t - GOLD_HISTORY_DAYS[state.historyTf] * 86_400_000;
+  const points = all.filter((p) => p.t >= from);
+  return points.length >= 2 ? points : null;
+}
+
+const historyFailed = (kind) => (kind === "market" ? state.historyFailed[state.historyTf] : state.goldHistoryFailed);
+
 const historyDate = (t, withTime) => new Intl.DateTimeFormat(isRTL() ? "ar-IQ-u-nu-latn" : "en-GB", {
   timeZone: "Asia/Baghdad",
   day: "numeric",
@@ -735,23 +797,26 @@ const historyDate = (t, withTime) => new Intl.DateTimeFormat(isRTL() ? "ar-IQ-u-
 }).format(t);
 
 function renderHistory() {
+  for (const kind of Object.keys(els.charts)) renderChart(kind);
+}
+
+function renderChart(kind) {
   const s = t();
-  const r = els.market;
+  const r = els.charts[kind];
   const tf = state.historyTf;
-  const entry = state.history[tf];
+  const pts = historyPoints(kind);
   r.tfButtons.forEach((b) => {
     b.textContent = s.historyRanges[b.dataset.tf];
     b.setAttribute("aria-checked", String(b.dataset.tf === tf));
   });
 
-  if (!entry) {
-    r.hchange.textContent = state.historyFailed[tf] ? s.historyError : "";
+  if (!pts) {
+    r.hchange.textContent = historyFailed(kind) ? s.historyError : "";
     r.hchange.className = "history-change";
-    r.hchart.replaceChildren(Object.assign(document.createElement("div"), { className: state.historyFailed[tf] ? "history-empty" : "history-empty sk" }));
+    r.hchart.replaceChildren(Object.assign(document.createElement("div"), { className: historyFailed(kind) ? "history-empty" : "history-empty sk" }));
     return;
   }
 
-  const pts = entry.points;
   const first = pts[0];
   const last = pts[pts.length - 1];
   const diff = last.mid - first.mid;
@@ -764,24 +829,21 @@ function renderHistory() {
   const sign = dir > 0 ? "+" : dir < 0 ? "−" : "";
   r.hchange.innerHTML = `<span class="h-val">${dir ? arrow(dir) : ""}<span class="num">${sign}${fmt.format(Math.abs(diff))}</span><span>${s.iqd}</span><span class="d-sep">·</span><span class="num">${sign}${Math.abs(pct).toFixed(2)}%</span></span><span>${s.historySpan(days)}</span>`;
 
-  drawHistory();
+  drawHistory(kind);
 }
 
-// One series (the market middle price): 2px line over a soft wash, clean ticks, end dot,
+// One series (the market middle price, or 21K gold in dinars): 2px line over a soft wash, clean ticks, end dot,
 // and a crosshair readout that follows the pointer or finger. Time runs left to right in
 // both languages, as in any price chart.
-function drawHistory() {
-  const box = els.market.hchart;
-  const entry = state.history[state.historyTf];
+function drawHistory(kind) {
+  const box = els.charts[kind].hchart;
+  const pts = historyPoints(kind);
   const width = Math.round(box.clientWidth);
-  if (!entry || !width) return;
+  if (!pts || !width) return;
   const s = t();
-  const pts = entry.points;
-  const withTime = state.historyTf === "12h";
+  const withTime = kind === "market" && state.historyTf === "12h";
+  const label = kind === "gold" ? s.goldHistoryLabel : s.historyLabel;
   const height = 150;
-  const m = { top: 10, right: 10, bottom: 22, left: 46 };
-  const iw = width - m.left - m.right;
-  const ih = height - m.top - m.bottom;
 
   const values = pts.map((p) => p.mid);
   const lo = Math.min(...values);
@@ -791,6 +853,12 @@ function drawHistory() {
   const step = [1, 2, 2.5, 5, 10].map((k) => k * mag).find((v) => v >= rawStep) || 10 * mag;
   const yMin = Math.floor(lo / step) * step;
   const yMax = Math.max(yMin + step, Math.ceil(hi / step) * step);
+  const ticks = [];
+  for (let v = yMin; v <= yMax + step / 2; v += step) ticks.push(v);
+  // Room for the longest tick label (gold prices run to seven digits).
+  const m = { top: 10, right: 10, bottom: 22, left: Math.max(46, 12 + 6 * Math.max(...ticks.map((v) => fmtInt.format(v).length))) };
+  const iw = width - m.left - m.right;
+  const ih = height - m.top - m.bottom;
   const x = (i) => m.left + (i / (pts.length - 1)) * iw;
   const y = (v) => m.top + ih - ((v - yMin) / (yMax - yMin)) * ih;
 
@@ -803,9 +871,9 @@ function drawHistory() {
   };
   const svg = el("svg", {
     class: "history-svg", viewBox: `0 0 ${width} ${height}`, width, height, role: "img", tabindex: "0",
-    "aria-label": s.historyLabel(historyDate(pts[0].t, withTime), historyDate(pts[pts.length - 1].t, withTime), fmt.format(lo), fmt.format(hi)),
+    "aria-label": label(historyDate(pts[0].t, withTime), historyDate(pts[pts.length - 1].t, withTime), fmt.format(lo), fmt.format(hi)),
   });
-  for (let v = yMin; v <= yMax + step / 2; v += step) {
+  for (const v of ticks) {
     svg.append(el("line", { class: "h-grid", x1: m.left, x2: m.left + iw, y1: y(v), y2: y(v) }));
     svg.append(el("text", { class: "h-tick", x: m.left - 6, y: y(v) + 4, "text-anchor": "end" }, fmtInt.format(v)));
   }
@@ -866,7 +934,6 @@ function applyTab() {
   els.errorView.hidden = gold || !usdDown;
   els.legend.hidden = gold;
   els.goldSource.hidden = !gold;
-  els.marketSource.hidden = gold;
   els.footnote.textContent = gold ? t().goldFootnote : t().footnote;
   els.shareBtn.disabled = gold ? !state.gold : !state.data;
 }
@@ -962,6 +1029,8 @@ async function load({ manual = false } = {}) {
   els.refreshBtn.classList.remove("counting");
   renderStatus();
 
+  // The gold history has its own source, so it doesn't wait for the prices below.
+  loadGoldHistory();
   // The sources load independently: one failing doesn't blank the others.
   const [usd, gold, market] = await Promise.allSettled([getJSON(API_URL), getJSON(GOLD_API_URL), getJSON(MARKET_API_URL)]);
   if (manual) await sleep(600);
@@ -1173,6 +1242,7 @@ function contentRows(tab) {
       qAll("#goldCard .city-head"),
       ...qAll("#goldCard .karat-row").map((row) => [row]),
       qAll("#goldCard .gold-foot, #goldError:not([hidden])"),
+      qAll("#goldCard .history-block"),
     ];
   }
   if (!els.errorView.hidden) return [[els.errorView]];
@@ -1183,7 +1253,7 @@ function contentRows(tab) {
       qAll("#marketCard .market-main"),
       qAll("#marketCard .market-sides .price"),
       qAll("#marketCard .market-stats"),
-      qAll("#marketCard .market-history, #marketCard .market-updated"),
+      qAll("#marketCard .history-block, #marketCard .market-updated"),
     );
   }
   rows.push(...qAll(".city").map((card) => qAll(".city-head, .price", card)));
@@ -1336,16 +1406,20 @@ function bindEvents() {
     if (btn) selectTab(btn.dataset.tab);
   });
   els.shareBtn.addEventListener("click", share);
-  els.market.tfButtons.forEach((b) => b.addEventListener("click", () => selectHistoryTf(b.dataset.tf)));
-  // Redraw the chart to the card's width (first layout, rotation, desktop resize).
-  let chartWidth = 0;
-  new ResizeObserver(([entry]) => {
-    const w = Math.round(entry.contentRect.width);
-    if (w && w !== chartWidth) {
-      chartWidth = w;
-      drawHistory();
+  // Redraw a chart to its card's width (first layout, showing its tab, rotation, resize).
+  const chartWidths = new Map();
+  const resized = new ResizeObserver((entries) => {
+    for (const entry of entries) {
+      const w = Math.round(entry.contentRect.width);
+      if (!w || w === chartWidths.get(entry.target)) continue;
+      chartWidths.set(entry.target, w);
+      drawHistory(entry.target.closest("[data-history]").dataset.history);
     }
-  }).observe(els.market.hchart);
+  });
+  for (const r of Object.values(els.charts)) {
+    resized.observe(r.hchart);
+    r.tfButtons.forEach((b) => b.addEventListener("click", () => selectHistoryTf(b.dataset.tf)));
+  }
   els.legalBtn.addEventListener("click", openLegal);
   els.legalSheet.addEventListener("click", (e) => {
     if (e.target.closest("[data-close]")) closeLegal();
@@ -1406,6 +1480,8 @@ function init() {
     const cachedHistory = readJSON(`borsa:history:${tf}`);
     if (cachedHistory?.points?.length >= 2 && Date.now() - cachedHistory.at < CACHE_MAX_AGE_MS) state.history[tf] = cachedHistory;
   }
+  const cachedGoldHistory = readJSON(GOLD_HISTORY_CACHE_KEY);
+  if (cachedGoldHistory?.points?.length >= 2 && Date.now() - cachedGoldHistory.at < CACHE_MAX_AGE_MS) state.goldHistory = cachedGoldHistory;
   const cachedMarket = readJSON(MARKET_CACHE_KEY);
   if (cachedMarket?.market && Date.now() - cachedMarket.t < CACHE_MAX_AGE_MS) state.market = cachedMarket.market;
   const cachedGold = readJSON(GOLD_CACHE_KEY);

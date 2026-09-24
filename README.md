@@ -7,7 +7,7 @@ A Telegram Mini App that shows the USD → IQD borsa rates (sell / buy) for Bagh
 - **Two tabs:** Dollar and Gold, with the last one used remembered.
 - **Iraq market average:** a second source, [usdiqd.com](https://usdiqd.com), shown first, above the city cards. It shows the market middle price and its change, buy/sell and spread, and the gap from the official rate. It updates every few minutes and shows when the source last updated. It includes a price history chart of the middle price (14 days, 60 days or 10 weeks), with a touch readout, and the change over the range. usdiqd.com's own site shows only the middle price. Its `buy` is the higher number, so the Worker maps the sides by value: the higher price is بيع (sell), as on the city cards.
 - **One card per city:** sell and buy for Baghdad, Basra and Erbil, each with the change since the previous price, the price of $100, and the buy/sell spread.
-- **Gold:** 24, 21 and 18 karat per mithqal (5 g), in dinars and dollars. Calculated from the world gold price ([gold-api.com](https://gold-api.com)) and converted at Baghdad's dollar sell rate, so gold shops may charge more.
+- **Gold:** 24, 21 and 18 karat per mithqal (5 g), in dinars and dollars. Calculated from the world gold price ([gold-api.com](https://gold-api.com)) and converted at Baghdad's dollar sell rate, so gold shops may charge more. Below the prices, a price history chart of 21 karat per mithqal in dinars (14 days, 60 days or 10 weeks, the same range as the dollar chart). Each day is converted at that day's Iraq market average, because the city rates have no history.
 - **Best rate:** ★ marks the cheapest place to buy dollars (lowest sell) and the best place to sell them (highest buy).
 - **Share:** sends all three cities' rates to any Telegram chat.
 - **Always fresh:** refreshes every minute (the ring on the refresh button counts down), and again when the user comes back to the app. The last rates are saved on the device, so they appear instantly on the next open.
@@ -25,7 +25,7 @@ A Telegram Mini App that shows the USD → IQD borsa rates (sell / buy) for Bagh
 | `public/fonts/` | IBM Plex Sans Arabic, self-hosted (SIL Open Font License, see `OFL.txt`) |
 | `public/_headers` | Caches font files for a year |
 | `public/bot/` | Thumbnails for the bot's inline results |
-| `src/worker.js` | Cloudflare Worker entry: serves the page, `GET /api/rates` (city dollar rates), `GET /api/market` (Iraq market average), `GET /api/market/history?tf=12h|1d|1w`, `GET /api/gold` (world gold price), the bot webhook, and the 5-minute cron |
+| `src/worker.js` | Cloudflare Worker entry: serves the page, `GET /api/rates` (city dollar rates), `GET /api/market` (Iraq market average), `GET /api/market/history?tf=12h|1d|1w`, `GET /api/gold` (world gold price), `GET /api/gold/history` (21 karat per mithqal history), the bot webhook, and the 5-minute cron |
 | `src/rates.js` | Fetches and caches the upstream prices; gold-per-mithqal math |
 | `src/bot.js` | The Telegram bot: commands, action buttons, inline mode, groups, summaries and alerts |
 | `src/texts.js` | Everything the bot says (Arabic and English), its profile and command menus |
@@ -36,6 +36,8 @@ A Telegram Mini App that shows the USD → IQD borsa rates (sell / buy) for Bagh
 | `wrangler.jsonc` | Worker config: static files, database, cron trigger |
 
 `/api/rates` proxies `https://iraqborsa.com/borsa-api/summary.php`. The page can't call that API directly because it sends no CORS headers, so browsers block the request. The Worker caches the upstream response for 30 seconds, so the source isn't hit on every app open.
+
+`/api/gold/history` reads the gold price history from the database. gold-api.com's history endpoint needs a free API key and allows 10 requests an hour, so the 5-minute cron fetches 70 days of daily averages into the `cache` table at most once an hour, waiting 15 minutes after a failure. The route converts each day to 21 karat per mithqal in dinars. The key is the `GOLD_API_KEY` secret (type *Secret*, in the same place as the bot's secrets). The last failed attempt's error is kept in `cache.error`.
 
 Upstream response fields:
 
@@ -104,7 +106,7 @@ Inline mode must be switched on once in @BotFather (`/setinline`).
 
 ### Database
 
-Subscriptions and alerts live in the Cloudflare D1 database `iraq-exchange`. Pushes don't change its schema: after adding a file to `migrations/`, apply it with:
+Subscriptions, alerts, analytics events and the stored gold price history live in the Cloudflare D1 database `iraq-exchange`. Pushes don't change its schema: after adding a file to `migrations/`, apply it with:
 
 ```sh
 npx wrangler d1 migrations apply iraq-exchange --remote

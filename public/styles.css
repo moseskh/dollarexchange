@@ -651,8 +651,8 @@ a.source-pill { color: var(--c-link); text-decoration: none; font-weight: 600; }
 .market-stats .stat-amount span:last-child { color: var(--c-hint); font-weight: 500; }
 .market-updated { margin-top: var(--sp-2); font-size: var(--fs-micro); color: var(--c-hint); }
 
-/* Price history inside the market card */
-.market-history { margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--c-sep); }
+/* Price history charts, in the market card and the gold card */
+.history-block { margin-top: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--c-sep); }
 .history-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin-bottom: var(--sp-2); }
 .history-title { font-size: var(--fs-callout); font-weight: 600; }
 .history-tfs { display: inline-flex; padding: 2px; border-radius: var(--r-pill); background: var(--c-fill); }
@@ -700,6 +700,13 @@ a.source-pill { color: var(--c-link); text-decoration: none; font-weight: 600; }
 .history-change .d-sep { opacity: 0.45; }
 .history-change.up .h-val { color: var(--up); }
 .history-change.down .h-val { color: var(--down); }
+.history-note { margin: 2px 0 0; font-size: var(--fs-micro); color: var(--c-hint); }
+/* The gold card's chart is drawn in gold, like the rest of the card; a little darker in
+   light mode so the line keeps its contrast on white. */
+.gold-card .h-line { stroke: var(--gold); stroke: color-mix(in srgb, var(--gold) 82%, #000); }
+[data-scheme="dark"] .gold-card .h-line { stroke: var(--gold); }
+.gold-card .h-area, .gold-card .h-dot { fill: var(--gold); }
+[data-scheme="dark"] .gold-card .history-tfs button[aria-checked="true"] { background: var(--c-gold-soft); box-shadow: inset 0 0 0 1px var(--c-gold-soft); }
 
 /* Share */
 .share-btn {

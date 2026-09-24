@@ -1,14 +1,16 @@
 // Serves the mini app from ./public, the price APIs it uses (the borsa API sends no CORS
 // headers, so the browser can't call it directly), and the Telegram bot's webhook.
-// A cron trigger (see wrangler.jsonc) sends price alerts and daily summaries.
+// A cron trigger (see wrangler.jsonc) sends price alerts and daily summaries, and refreshes
+// the stored gold price history.
 //
 // Secrets (set in Cloudflare, never in the repo):
 //   BOT_TOKEN           token from @BotFather
 //   WEBHOOK_SECRET      random string Telegram sends back with every update
 //   ANALYTICS_SALT      random string used to hash user ids in analytics
 //   DASHBOARD_PASSWORD  password for the /admin dashboard
+//   GOLD_API_KEY        free key from gold-api.com, for the gold price history
 
-import { fetchGold, fetchMarket, fetchMarketHistory, fetchRates } from "./rates.js";
+import { fetchGold, fetchGoldHistory, fetchMarket, fetchMarketHistory, fetchRates, refreshGoldHistory } from "./rates.js";
 import { handleUpdate, runScheduled, setupBot } from "./bot.js";
 import { dashboardStats, handleAppEvent } from "./analytics.js";
 import dashboardHtml from "./dashboard.html";
@@ -18,6 +20,7 @@ export default {
     const url = new URL(request.url);
     if (url.pathname === "/api/rates") return priceRoute(fetchRates);
     if (url.pathname === "/api/gold") return priceRoute(fetchGold);
+    if (url.pathname === "/api/gold/history") return priceRoute(() => fetchGoldHistory(env));
     if (url.pathname === "/api/market") return priceRoute(fetchMarket);
     if (url.pathname === "/api/market/history") return priceRoute(() => fetchMarketHistory(url.searchParams.get("tf") || "1d"));
     if (url.pathname === "/api/event" && request.method === "POST") return handleAppEvent(request, env);
@@ -29,6 +32,7 @@ export default {
 
   async scheduled(event, env, ctx) {
     ctx.waitUntil(runScheduled(env).catch((err) => console.error("Scheduled run failed:", err.message)));
+    ctx.waitUntil(refreshGoldHistory(env).catch((err) => console.error("Gold history refresh failed:", err.message)));
   },
 };
 

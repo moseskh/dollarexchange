@@ -4,6 +4,15 @@ const RATES_UPSTREAM = "https://iraqborsa.com/borsa-api/summary.php";
 // Free, keyless gold spot price (USD per troy ounce). Its terms ask for no more than a
 // request every few seconds, so the edge cache below keeps us to about one a minute.
 const GOLD_UPSTREAM = "https://api.gold-api.com/price/XAU";
+// Gold price history, as daily averages in USD per ounce. It needs a free API key
+// (GOLD_API_KEY) and allows 10 requests an hour, so the scheduled job fetches it into D1
+// at most hourly and the app reads it from there.
+const GOLD_HISTORY_UPSTREAM = "https://api.gold-api.com/history";
+const GOLD_HISTORY_CACHE_KEY = "gold_history";
+const GOLD_HISTORY_DAYS = 70; // the longest chart range, 10 weeks
+const GOLD_HISTORY_REFRESH_MS = 60 * 60_000; // today's average moves during the day
+const GOLD_HISTORY_RETRY_MS = 15 * 60_000;
+const GOLD_HISTORY_KARAT = 21; // the karat most bought in Iraq
 // Iraq-wide parallel-market average and its gap from the official rate, updated every few minutes.
 // Its responses ask for 60s caching (Cache-Control: max-age=60), which we match.
 const MARKET_UPSTREAM = "https://usdiqd.com/api/rates";
@@ -91,6 +100,81 @@ export async function fetchMarketHistory(tf) {
     .sort((a, b) => a.t - b.t);
   if (points.length < 2) throw new Error("not enough history");
   return { tf, points };
+}
+
+// Called by the scheduled job every 5 minutes; fetches only when the stored copy is an hour
+// old, and waits 15 minutes after a failure.
+export async function refreshGoldHistory(env) {
+  if (!env.GOLD_API_KEY) return;
+  const now = Date.now();
+  const row = await env.DB.prepare("SELECT fetched_at, tried_at FROM cache WHERE key = ?1").bind(GOLD_HISTORY_CACHE_KEY).first();
+  if (row && (now - (row.fetched_at ?? 0) < GOLD_HISTORY_REFRESH_MS || now - row.tried_at < GOLD_HISTORY_RETRY_MS)) return;
+
+  let points;
+  try {
+    points = await fetchGoldHistoryUpstream(env.GOLD_API_KEY, now);
+  } catch (err) {
+    await env.DB.prepare(
+      `INSERT INTO cache (key, tried_at, error) VALUES (?1, ?2, ?3)
+       ON CONFLICT (key) DO UPDATE SET tried_at = excluded.tried_at, error = excluded.error`,
+    ).bind(GOLD_HISTORY_CACHE_KEY, now, err.message).run();
+    throw err;
+  }
+  await env.DB.prepare(
+    `INSERT INTO cache (key, value, fetched_at, tried_at, error) VALUES (?1, ?2, ?3, ?3, NULL)
+     ON CONFLICT (key) DO UPDATE SET value = excluded.value, fetched_at = excluded.fetched_at,
+       tried_at = excluded.tried_at, error = NULL`,
+  ).bind(GOLD_HISTORY_CACHE_KEY, JSON.stringify(points), now).run();
+}
+
+async function fetchGoldHistoryUpstream(apiKey, now) {
+  const end = Math.floor(now / 1000);
+  const params = new URLSearchParams({
+    symbol: "XAU",
+    startTimestamp: String(end - (GOLD_HISTORY_DAYS + 1) * 86_400),
+    endTimestamp: String(end),
+    groupBy: "day",
+    aggregation: "avg",
+    orderBy: "asc",
+  });
+  const res = await fetch(`${GOLD_HISTORY_UPSTREAM}?${params}`, { headers: { ...UPSTREAM_HEADERS, "x-api-key": apiKey } });
+  const body = await res.text();
+  if (!res.ok) throw new Error(`gold history upstream returned ${res.status}: ${body.slice(0, 200)}`);
+  let rows;
+  try {
+    rows = JSON.parse(body);
+  } catch {
+    throw new Error(`gold history upstream sent invalid JSON: ${body.slice(0, 200)}`);
+  }
+  // Rows look like { day: "2026-07-01", avg_price: 4200.5 }.
+  const points = (Array.isArray(rows) ? rows : [])
+    .map((r) => ({ t: Date.parse(r.day), oz: Number(r.avg_price) }))
+    .filter((p) => Number.isFinite(p.t) && p.oz > 0)
+    .sort((a, b) => a.t - b.t);
+  if (points.length < 2) throw new Error(`unexpected gold history response: ${body.slice(0, 200)}`);
+  return points;
+}
+
+// The stored gold history as the app charts it: 21 karat per mithqal in dinars. The city
+// rates have no history, so each day converts at that day's Iraq market average (daily
+// points cover 60 days, weekly ones reach further back).
+export async function fetchGoldHistory(env) {
+  const row = await env.DB.prepare("SELECT value, fetched_at FROM cache WHERE key = ?1").bind(GOLD_HISTORY_CACHE_KEY).first();
+  if (!row?.value) throw new Error("gold history not loaded yet");
+  const [daily, weekly] = await Promise.all([
+    fetchMarketHistory("1d"),
+    fetchMarketHistory("1w").catch(() => ({ points: [] })),
+  ]);
+  const rates = [...daily.points, ...weekly.points];
+  const points = [];
+  for (const p of JSON.parse(row.value)) {
+    let nearest = null;
+    for (const r of rates) if (!nearest || Math.abs(r.t - p.t) < Math.abs(nearest.t - p.t)) nearest = r;
+    if (!nearest || Math.abs(nearest.t - p.t) > 8 * 86_400_000) continue;
+    points.push({ t: p.t, mid: Math.round(goldUsd(p.oz, GOLD_HISTORY_KARAT) * nearest.mid) });
+  }
+  if (points.length < 2) throw new Error("not enough gold history");
+  return { karat: GOLD_HISTORY_KARAT, fetchedAt: row.fetched_at, points };
 }
 
 // USD price of one Iraqi mithqal (5 g) of gold at the given karat.
