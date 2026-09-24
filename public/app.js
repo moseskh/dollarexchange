@@ -510,6 +510,7 @@ function applyTab() {
   const gold = isGoldTab();
   const usdDown = !state.data && state.failed;
   for (const b of els.tabButtons) b.setAttribute("aria-selected", String(b.dataset.tab === state.tab));
+  els.tabs.dataset.active = state.tab;
   els.goldPanel.hidden = !gold;
   els.usdPanel.hidden = gold || usdDown;
   els.errorView.hidden = gold || !usdDown;
@@ -839,6 +840,7 @@ function selectTab(tab) {
   state.tab = tab;
   savePrefs();
   for (const b of els.tabButtons) b.setAttribute("aria-selected", String(b.dataset.tab === tab));
+  els.tabs.dataset.active = tab;
   moveThumb();
   popTransition(before, () => {
     applyTab();
