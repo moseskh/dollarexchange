@@ -7,6 +7,10 @@
 import { APP_LINK, BOT_PROFILE, BOT_USERNAME, COMMAND_MENUS, T, langOf } from "./texts.js";
 import { CITY_KEYS, KARATS, bestCities, fetchGold, fetchRates, goldRate, goldUsd } from "./rates.js";
 import { isGoneError, telegram } from "./telegram.js";
+import { pruneEvents, recordEvent } from "./analytics.js";
+
+const track = (ctx, fields) => recordEvent(ctx.env, { source: "bot", userKind: "telegram", ...fields });
+const KNOWN_COMMANDS = new Set(["start", "help", "dollar", "usd", "gold", "subscribe", "unsubscribe", "alert"]);
 
 const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 });
 const fmtInt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -103,7 +107,7 @@ const placeOf = (chat) => (chat.type === "private" ? "private" : "group");
 
 function openButton(lang, place, appUrl) {
   const text = T[lang].btnOpen;
-  return place === "private" ? { text, web_app: { url: appUrl } } : { text, url: APP_LINK };
+  return place === "private" ? { text, web_app: { url: `${appUrl}/?from=bot` } } : { text, url: APP_LINK };
 }
 
 function viewKeyboard(view, lang, place, appUrl) {
@@ -166,7 +170,7 @@ async function sendWelcome(ctx, chat, lang) {
   // The chat's menu button (next to the message box) opens the app, labelled in the user's language.
   await telegram(ctx.env, "setChatMenuButton", {
     chat_id: chat.id,
-    menu_button: { type: "web_app", text: s.menu, web_app: { url: ctx.appUrl } },
+    menu_button: { type: "web_app", text: s.menu, web_app: { url: `${ctx.appUrl}/?from=menu` } },
   }).catch(() => {});
 }
 
@@ -196,6 +200,15 @@ async function onMessage(ctx, msg, isChannel) {
   const isPrivate = msg.chat.type === "private";
   const lang = langOf(msg.from?.language_code);
   const command = parseCommand(text);
+  if (command ? KNOWN_COMMANDS.has(command.name) : isPrivate) {
+    await track(ctx, {
+      event: command ? "command" : "text",
+      platform: msg.chat.type,
+      lang,
+      detail: command ? (command.name === "usd" ? "dollar" : command.name) : null,
+      userId: msg.from?.id,
+    });
+  }
 
   if (!command) {
     // Groups and channels: only our own commands. Private chats: guess from the words used.
@@ -233,6 +246,14 @@ async function onCallback(ctx, cb) {
   const answer = (text) =>
     telegram(ctx.env, "answerCallbackQuery", { callback_query_id: cb.id, ...(text ? { text } : {}) }).catch(() => {});
 
+  await track(ctx, {
+    event: "button",
+    platform: cb.inline_message_id ? "inline" : cb.message?.chat?.type,
+    lang,
+    detail: kind === "alert" ? "alert_off" : view,
+    userId: cb.from?.id,
+  });
+
   if (kind === "alert" && view === "off" && cb.message) {
     await ctx.env.DB.prepare("DELETE FROM alerts WHERE chat_id = ?1").bind(cb.message.chat.id).run();
     await telegram(ctx.env, "editMessageText", {
@@ -268,6 +289,7 @@ async function onCallback(ctx, cb) {
 async function onInline(ctx, query) {
   const lang = langOf(query.from?.language_code);
   const s = T[lang];
+  await track(ctx, { event: "inline", platform: "inline", lang, userId: query.from?.id });
   const prices = await loadPrices("all");
   const result = (view, title, description, thumb) => ({
     type: "article",
@@ -310,6 +332,9 @@ async function onMembership(ctx, change) {
   const now = change.new_chat_member?.status;
   const chat = change.chat;
 
+  if (inside(now) !== inside(was)) {
+    await track(ctx, { event: inside(now) ? "join" : "leave", platform: chat.type, lang: langOf(change.from?.language_code), userId: change.from?.id });
+  }
   if (inside(now) && !inside(was) && (chat.type === "group" || chat.type === "supergroup")) {
     await send(ctx, chat.id, groupHelpText(langOf(change.from?.language_code))).catch(() => {});
   }
@@ -412,8 +437,12 @@ export async function runScheduled(env) {
   const ctx = { env, appUrl: env.APP_URL };
   const now = new Date();
   const prices = await loadPrices("all");
-  if (prices.rates) await fireAlerts(ctx, prices, now);
-  if (prices.rates || prices.gold) await sendSummaries(ctx, prices, now);
+  const alertsSent = prices.rates ? await fireAlerts(ctx, prices, now) : 0;
+  const summariesSent = prices.rates || prices.gold ? await sendSummaries(ctx, prices, now) : 0;
+  if (alertsSent) await recordEvent(env, { source: "cron", event: "alert_sent", value: alertsSent });
+  if (summariesSent) await recordEvent(env, { source: "cron", event: "summary_sent", value: summariesSent });
+  // Once an hour, drop analytics older than the retention window.
+  if (now.getUTCMinutes() < 5) await pruneEvents(env).catch((err) => console.error("Prune failed:", err.message));
 }
 
 async function fireAlerts(ctx, prices, now) {
@@ -425,12 +454,14 @@ async function fireAlerts(ctx, prices, now) {
   ).bind(sell).all();
 
   const done = [];
+  let sent = 0;
   for (const alert of results) {
     const s = T[alert.lang];
     try {
       await send(ctx, alert.chat_id, s.alertFired(fmt.format(alert.target), alert.direction === "above", fmt.format(sell)), {
         reply_markup: viewKeyboard("usd", alert.lang, "private", ctx.appUrl),
       });
+      sent++;
     } catch (err) {
       if (!isGoneError(err)) {
         console.error("Alert send failed:", err.message);
@@ -442,6 +473,7 @@ async function fireAlerts(ctx, prices, now) {
   if (done.length) {
     await ctx.env.DB.batch(done.map((id) => ctx.env.DB.prepare("DELETE FROM alerts WHERE chat_id = ?1").bind(id)));
   }
+  return sent;
 }
 
 // Runs every 5 minutes, so a busy hour is sent in batches across that hour.
@@ -455,18 +487,21 @@ async function sendSummaries(ctx, prices, now) {
 
   const texts = {};
   const updates = [];
+  let sent = 0;
   for (const sub of results) {
     texts[sub.lang] ??= renderView("all", prices, sub.lang, now);
     const place = sub.chat_id > 0 ? "private" : "group"; // group and channel ids are negative
     try {
       await send(ctx, sub.chat_id, texts[sub.lang], { reply_markup: viewKeyboard("all", sub.lang, place, ctx.appUrl) });
       updates.push(ctx.env.DB.prepare("UPDATE subscriptions SET last_sent = ?2 WHERE chat_id = ?1").bind(sub.chat_id, date));
+      sent++;
     } catch (err) {
       if (isGoneError(err)) updates.push(ctx.env.DB.prepare("DELETE FROM subscriptions WHERE chat_id = ?1").bind(sub.chat_id));
       else console.error("Summary send failed:", err.message);
     }
   }
   if (updates.length) await ctx.env.DB.batch(updates);
+  return sent;
 }
 
 /* ---------- One-off setup ---------- */
@@ -480,7 +515,7 @@ export async function setupBot(env, origin) {
     allowed_updates: ["message", "channel_post", "callback_query", "inline_query", "my_chat_member"],
   });
   await telegram(env, "setChatMenuButton", {
-    menu_button: { type: "web_app", text: T.ar.menu, web_app: { url: origin } },
+    menu_button: { type: "web_app", text: T.ar.menu, web_app: { url: `${origin}/?from=menu` } },
   });
 
   const report = { profile: "updated", commands: "updated" };

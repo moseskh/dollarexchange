@@ -29,7 +29,9 @@ A Telegram Mini App that shows the USD → IQD borsa rates (sell / buy) for Bagh
 | `src/bot.js` | The Telegram bot: commands, action buttons, inline mode, groups, summaries and alerts |
 | `src/texts.js` | Everything the bot says (Arabic and English), its profile and command menus |
 | `src/telegram.js` | Small Bot API client |
-| `migrations/` | Database schema (Cloudflare D1) for subscriptions and alerts |
+| `src/analytics.js` | Usage events (app, bot, cron) and the dashboard's numbers |
+| `src/dashboard.html` | The `/admin` analytics dashboard |
+| `migrations/` | Database schema (Cloudflare D1): subscriptions, alerts, analytics events |
 | `wrangler.jsonc` | Worker config: static files, database, cron trigger |
 
 `/api/rates` proxies `https://iraqborsa.com/borsa-api/summary.php`. The page can't call that API directly because it sends no CORS headers, so browsers block the request. The Worker caches the upstream response for 30 seconds, so the source isn't hit on every app open.
@@ -106,6 +108,26 @@ Subscriptions and alerts live in the Cloudflare D1 database `iraq-exchange`. Pus
 ```sh
 npx wrangler d1 migrations apply iraq-exchange --remote
 ```
+
+## Analytics dashboard
+
+https://dollarexchange.mosakh.workers.dev/admin: any username, and the `DASHBOARD_PASSWORD` secret as the password.
+
+It shows unique users (with the change against the previous period), app opens, Telegram vs browser visitors, bot users and actions, and shares. Charts: daily activity, platforms, countries, how the app is opened (shared link, bot, chat menu, direct), tab, language and theme, bot commands and where they're used, busiest hours (Baghdad time), and daily summaries and alerts sent. Every chart has a table view.
+
+How it's collected:
+
+- **App:** sends small events (open, tab switch, share, language, theme, refresh, disclaimer) to `POST /api/event` with `navigator.sendBeacon`.
+- **Bot and cron:** the Worker records bot commands, button taps, inline searches, joins and leaves, and scheduled sends.
+- **Unique users:** counted by Telegram account, but only when Telegram's signed `initData` verifies against the bot token, so they can't be faked. Visits outside Telegram count as browser visitors, one per device.
+- **Privacy:** users are stored as `HMAC(ANALYTICS_SALT, id)`, never the raw id. Events are kept 90 days.
+
+Secrets:
+
+| Secret | Value |
+| --- | --- |
+| `ANALYTICS_SALT` | Random string for hashing user ids. Changing it resets unique-user counting |
+| `DASHBOARD_PASSWORD` | Password for `/admin` |
 
 ## Customising
 

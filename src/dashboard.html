@@ -1,0 +1,698 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Iraq Exchange analytics</title>
+<style>
+  /* Chart palette and chrome: the validated reference instance (dataviz palette.md).
+     Categorical slots 1-4 pass the adjacent CVD checks in both modes; slots 3-4 sit
+     below 3:1 on the light surface, so every chart that uses them has visible labels
+     and a table view. */
+  :root {
+    color-scheme: light;
+    --page: #f9f9f7;
+    --surface: #fcfcfb;
+    --ink: #0b0b0b;
+    --ink-2: #52514e;
+    --muted: #898781;
+    --grid: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11, 11, 11, 0.10);
+    --wash: rgba(11, 11, 11, 0.04);
+    --s1: #2a78d6;
+    --s2: #eb6834;
+    --s3: #1baf7a;
+    --s4: #eda100;
+    --good: #006300;
+    --bad: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --page: #0d0d0d;
+      --surface: #1a1a19;
+      --ink: #ffffff;
+      --ink-2: #c3c2b7;
+      --muted: #898781;
+      --grid: #2c2c2a;
+      --baseline: #383835;
+      --border: rgba(255, 255, 255, 0.10);
+      --wash: rgba(255, 255, 255, 0.05);
+      --s1: #3987e5;
+      --s2: #d95926;
+      --s3: #199e70;
+      --s4: #c98500;
+      --good: #0ca30c;
+      --bad: #d03b3b;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0d0d;
+    --surface: #1a1a19;
+    --ink: #ffffff;
+    --ink-2: #c3c2b7;
+    --muted: #898781;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255, 255, 255, 0.10);
+    --wash: rgba(255, 255, 255, 0.05);
+    --s1: #3987e5;
+    --s2: #d95926;
+    --s3: #199e70;
+    --s4: #c98500;
+    --good: #0ca30c;
+    --bad: #d03b3b;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; color: inherit; }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 24px 16px 48px; }
+
+  header.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+  h1 { margin: 0; font-size: 22px; font-weight: 650; letter-spacing: -0.01em; }
+  .sub { margin: 2px 0 0; color: var(--ink-2); }
+  .meta { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; }
+  .ghost { height: 32px; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); cursor: pointer; }
+  .ghost:hover { background: var(--wash); }
+
+  /* Filter row: one row, above everything it scopes */
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .range { display: inline-flex; padding: 3px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+  .range button { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 0; border-radius: 7px; background: none; color: var(--ink-2); cursor: pointer; }
+  .range button:hover { background: var(--wash); }
+  .range button[aria-pressed="true"] { color: var(--ink); font-weight: 650; background: var(--wash); }
+  .range .check { width: 16px; height: 16px; display: none; }
+  .range button[aria-pressed="true"] .check { display: block; }
+
+  main { transition: opacity 180ms ease; }
+  main.refreshing { opacity: 0.5; }
+  .grid { display: grid; gap: 12px; grid-template-columns: repeat(12, 1fr); }
+  .card { grid-column: span 12; min-width: 0; padding: 16px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); }
+  @media (min-width: 900px) {
+    .span-6 { grid-column: span 6; }
+    .span-4 { grid-column: span 4; }
+    .span-8 { grid-column: span 8; }
+  }
+  .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+  .card h2 { margin: 0; font-size: 15px; font-weight: 650; }
+  .card .hint { margin: 2px 0 0; color: var(--muted); font-size: 12.5px; }
+  .toggle { flex-shrink: 0; height: 28px; padding: 0 10px; border: 1px solid var(--border); border-radius: 7px; background: none; color: var(--ink-2); font-size: 12.5px; cursor: pointer; }
+  .toggle:hover { background: var(--wash); }
+
+  /* Hero + stat tiles */
+  .hero { display: grid; gap: 16px; align-items: end; grid-template-columns: 1fr; }
+  @media (min-width: 700px) { .hero { grid-template-columns: auto 1fr; } }
+  .hero-label { color: var(--ink-2); font-weight: 550; }
+  .hero-value { font-size: 56px; font-weight: 650; line-height: 1.05; letter-spacing: -0.02em; }
+  .tiles { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+  .tile { padding: 14px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+  .tile-label { color: var(--ink-2); font-size: 13px; }
+  .tile-value { margin-top: 4px; font-size: 26px; font-weight: 650; letter-spacing: -0.01em; }
+  .delta { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; font-size: 12.5px; color: var(--muted); }
+  .delta.up { color: var(--good); }
+  .delta.down { color: var(--bad); }
+  .delta svg { width: 10px; height: 10px; }
+
+  /* Charts */
+  .chart { position: relative; }
+  svg.plot { display: block; width: 100%; overflow: visible; }
+  .axis text, .tick { fill: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+  .gridline { stroke: var(--grid); stroke-width: 1; shape-rendering: crispEdges; }
+  .base { stroke: var(--baseline); stroke-width: 1; shape-rendering: crispEdges; }
+  .series-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .end-label { fill: var(--ink-2); font-size: 12px; }
+  .crosshair { stroke: var(--baseline); stroke-width: 1; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; color: var(--ink-2); font-size: 12.5px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .key-line { width: 14px; height: 2px; border-radius: 1px; }
+  .key-rect { width: 10px; height: 10px; border-radius: 2px; }
+
+  .tooltip {
+    position: absolute; z-index: 5; pointer-events: none; min-width: 120px;
+    padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12); font-size: 12.5px;
+  }
+  .tooltip .tt-title { color: var(--muted); margin-bottom: 4px; }
+  .tooltip .tt-row { display: flex; align-items: center; gap: 8px; }
+  .tooltip .tt-row strong { font-weight: 650; font-variant-numeric: tabular-nums; }
+  .tooltip .tt-row span:last-child { color: var(--ink-2); }
+
+  /* Horizontal bars (HTML) */
+  .bars { display: grid; gap: 6px; }
+  .bar-row { display: grid; grid-template-columns: minmax(90px, 34%) 1fr auto; align-items: center; gap: 10px; padding: 3px 4px; border-radius: 6px; outline: none; }
+  .bar-row:hover, .bar-row:focus-visible { background: var(--wash); }
+  .bar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); }
+  .bar-track { height: 16px; }
+  .bar { height: 16px; min-width: 2px; background: var(--s1); border-radius: 0 4px 4px 0; }
+  .bar-value { min-width: 36px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+  @media (max-width: 600px) { .bar-row { grid-template-columns: minmax(0, 48%) 1fr auto; } }
+
+  /* Part-to-whole bars */
+  .stacks { display: grid; gap: 16px; }
+  .stack-title { margin-bottom: 6px; color: var(--ink-2); font-size: 13px; font-weight: 550; }
+  .stack { display: flex; gap: 2px; height: 16px; background: var(--surface); }
+  .seg { height: 100%; min-width: 3px; outline: none; }
+  .seg:first-child { border-radius: 4px 0 0 4px; }
+  .seg:last-child { border-radius: 0 4px 4px 0; }
+  .seg:only-child { border-radius: 4px; }
+  .seg:hover, .seg:focus-visible { filter: brightness(1.12); }
+
+  table.data { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.data th, table.data td { padding: 6px 8px; border-bottom: 1px solid var(--grid); text-align: left; }
+  table.data th { color: var(--muted); font-weight: 550; }
+  table.data td.n { text-align: right; font-variant-numeric: tabular-nums; }
+  .empty { padding: 28px 8px; text-align: center; color: var(--muted); }
+  .error { padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--bad); }
+  footer { margin-top: 20px; color: var(--muted); font-size: 12.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Iraq Exchange</h1>
+      <p class="sub">Usage analytics for the mini app and the Telegram bot</p>
+    </div>
+    <div class="meta"><span id="updated"></span><button class="ghost" id="reload" type="button">Refresh</button></div>
+  </header>
+
+  <div class="filters" role="toolbar" aria-label="Date range">
+    <div class="range" id="range"></div>
+  </div>
+
+  <main id="main" aria-live="polite"></main>
+
+  <footer>Times are Baghdad time (UTC+3). Users are counted by a salted hash of their id, never the id itself; browser visitors (outside Telegram) are counted per device. Data is kept for 90 days.</footer>
+</div>
+
+<script>
+"use strict";
+
+/* ---------- Setup ---------- */
+
+const RANGES = [
+  { key: "today", label: "Today", prev: "yesterday" },
+  { key: "7d", label: "7 days", prev: "previous 7 days" },
+  { key: "30d", label: "30 days", prev: "previous 30 days" },
+  { key: "90d", label: "90 days", prev: "previous 90 days" },
+];
+const PLATFORMS = {
+  ios: "iPhone / iPad", android: "Android", android_x: "Android", tdesktop: "Telegram Desktop", macos: "Telegram for Mac",
+  weba: "Telegram Web", webk: "Telegram Web", web: "Telegram Web", unigram: "Unigram", browser: "Outside Telegram", unknown: "Unknown",
+};
+const REFS = { share: "Shared link", bot: "Bot button or link", menu: "Chat menu button", direct: "Bot profile / direct", link: "Other link" };
+const TABS = { usd: "Dollar", gold: "Gold" };
+const LANGS = { ar: "Arabic", en: "English" };
+const THEMES = { light: "Light", dark: "Dark" };
+const COMMANDS = {
+  "command:dollar": "/dollar", "command:gold": "/gold", "command:alert": "/alert", "command:subscribe": "/subscribe",
+  "command:unsubscribe": "/unsubscribe", "command:start": "/start", "command:help": "/help", text: "Free-text messages",
+  button: "Button taps", inline: "Inline searches",
+};
+const SERIES = ["var(--s1)", "var(--s2)", "var(--s3)", "var(--s4)"];
+
+const params = new URLSearchParams(location.search);
+let range = RANGES.some((r) => r.key === params.get("range")) ? params.get("range") : "7d";
+let stats = null;
+const $ = (id) => document.getElementById(id);
+const regionNames = (() => { try { return new Intl.DisplayNames(["en"], { type: "region" }); } catch { return null; } })();
+const nf = new Intl.NumberFormat("en-US");
+const compact = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
+const fmtN = (n) => (Math.abs(n) >= 10000 ? compact.format(n) : nf.format(n));
+const pct = (part, whole) => {
+  if (!whole || !part) return "0%";
+  const p = (part / whole) * 100;
+  return p < 1 ? "<1%" : `${Math.round(p)}%`;
+};
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+// Build DOM without innerHTML: every label here can come from stored data.
+function h(tag, attrs = {}, ...children) {
+  const el = attrs.svg ? document.createElementNS(SVG_NS, tag) : document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "svg" || v == null || v === false) continue;
+    if (k === "class") el.setAttribute("class", v);
+    else if (k === "style" && typeof v === "object") Object.assign(el.style, v);
+    else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+    else el.setAttribute(k, v);
+  }
+  for (const c of children.flat()) if (c != null && c !== false) el.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  return el;
+}
+const s = (tag, attrs = {}, ...children) => h(tag, { ...attrs, svg: true }, ...children);
+
+function country(code) {
+  if (!code || code === "XX" || code === "T1") return "Unknown";
+  try { return regionNames?.of(code) || code; } catch { return code; }
+}
+
+/* ---------- Tooltip ---------- */
+
+const tooltip = h("div", { class: "tooltip", role: "status", hidden: true });
+document.body.append(tooltip);
+
+function showTip(title, rows, x, y) {
+  tooltip.replaceChildren(
+    h("div", { class: "tt-title" }, title),
+    ...rows.map((r) => h("div", { class: "tt-row" },
+      r.color ? h("span", { class: "key-line", style: { background: r.color } }) : null,
+      h("strong", {}, r.value), h("span", {}, r.label))),
+  );
+  tooltip.hidden = false;
+  const pad = 12;
+  const { width, height } = tooltip.getBoundingClientRect();
+  const left = Math.min(window.scrollX + x + pad, window.scrollX + document.documentElement.clientWidth - width - 8);
+  const top = window.scrollY + y - height - pad;
+  tooltip.style.left = `${Math.max(8, left)}px`;
+  tooltip.style.top = `${top < window.scrollY + 8 ? window.scrollY + y + pad : top}px`;
+}
+const hideTip = () => { tooltip.hidden = true; };
+
+// Per-mark hover + keyboard focus for bars, segments and columns.
+function hoverable(el, title, rows) {
+  const at = (e) => {
+    const r = el.getBoundingClientRect();
+    showTip(title, rows, e?.clientX ?? r.left + r.width / 2, e?.clientY ?? r.top);
+  };
+  el.setAttribute("tabindex", "0");
+  el.setAttribute("aria-label", `${title}: ${rows.map((r) => `${r.value} ${r.label}`).join(", ")}`);
+  el.addEventListener("pointermove", at);
+  el.addEventListener("pointerleave", hideTip);
+  el.addEventListener("focus", () => at());
+  el.addEventListener("blur", hideTip);
+  return el;
+}
+
+/* ---------- Card with a table-view twin ---------- */
+
+function card({ title, hint, span = "", chart, table, empty }) {
+  const body = h("div", { class: "chart" });
+  const tableWrap = h("div", { hidden: true });
+  let showingTable = false;
+  const toggle = table && !empty ? h("button", { class: "toggle", type: "button", "aria-pressed": "false", onclick: () => {
+    showingTable = !showingTable;
+    toggle.setAttribute("aria-pressed", String(showingTable));
+    toggle.textContent = showingTable ? "Chart" : "Table";
+    body.hidden = showingTable;
+    tableWrap.hidden = !showingTable;
+    if (showingTable && !tableWrap.firstChild) tableWrap.append(table());
+  } }, "Table") : null;
+  const el = h("section", { class: `card ${span}` },
+    h("div", { class: "card-head" }, h("div", {}, h("h2", {}, title), hint ? h("p", { class: "hint" }, hint) : null), toggle),
+    body, tableWrap);
+  if (empty) body.append(h("div", { class: "empty" }, "No data in this range yet."));
+  else queueMicrotask(() => chart(body));
+  return el;
+}
+
+function dataTable(head, rows) {
+  return h("table", { class: "data" },
+    h("thead", {}, h("tr", {}, head.map((c, i) => h("th", { class: i ? "n" : null, style: i ? { textAlign: "right" } : null }, c)))),
+    h("tbody", {}, rows.map((r) => h("tr", {}, r.map((c, i) => h("td", { class: i ? "n" : null }, typeof c === "number" ? nf.format(c) : c))))));
+}
+
+/* ---------- Charts ---------- */
+
+// Clean axis ticks: 0, 1, 2, 5 steps.
+function niceTicks(max, count = 4) {
+  if (max <= 0) return [0, 1];
+  const raw = max / count;
+  const mag = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 5, 10].map((m) => m * mag).find((st) => st >= raw) || 10 * mag;
+  const ticks = [];
+  for (let v = 0; v <= max + step * 0.001; v += step) ticks.push(Math.round(v));
+  if (ticks[ticks.length - 1] < max) ticks.push(ticks[ticks.length - 1] + step);
+  return ticks;
+}
+
+function responsive(container, draw) {
+  let last = 0;
+  const ro = new ResizeObserver(([entry]) => {
+    const w = Math.round(entry.contentRect.width);
+    if (w && w !== last) { last = w; draw(w); }
+  });
+  ro.observe(container);
+}
+
+// Multi-series line chart on one axis, crosshair + tooltip, direct end labels.
+function lineChart(container, { labels, tipLabels, series }) {
+  responsive(container, (width) => {
+    const height = 220;
+    const m = { top: 12, right: 96, bottom: 26, left: 40 };
+    const iw = width - m.left - m.right;
+    const ih = height - m.top - m.bottom;
+    const max = Math.max(1, ...series.flatMap((sr) => sr.values));
+    const ticks = niceTicks(max);
+    const top = ticks[ticks.length - 1];
+    const x = (i) => m.left + (labels.length === 1 ? iw / 2 : (i / (labels.length - 1)) * iw);
+    const y = (v) => m.top + ih - (v / top) * ih;
+
+    const svg = s("svg", { class: "plot", viewBox: `0 0 ${width} ${height}`, height, role: "img", "aria-label": series.map((sr) => sr.name).join(" and ") + " over time" });
+    for (const t of ticks) {
+      svg.append(s("line", { class: t === 0 ? "base" : "gridline", x1: m.left, x2: m.left + iw, y1: y(t), y2: y(t) }));
+      svg.append(s("text", { class: "tick", x: m.left - 8, y: y(t) + 4, "text-anchor": "end" }, fmtN(t)));
+    }
+    const every = Math.max(1, Math.ceil(labels.length / Math.max(2, Math.floor(iw / 70))));
+    labels.forEach((l, i) => {
+      if (i % every && i !== labels.length - 1) return;
+      svg.append(s("text", { class: "tick", x: x(i), y: height - 6, "text-anchor": "middle" }, l));
+    });
+
+    const ends = [];
+    for (const sr of series) {
+      const d = sr.values.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("");
+      svg.append(s("path", { class: "series-line", d, stroke: sr.color }));
+      const li = sr.values.length - 1;
+      svg.append(s("circle", { cx: x(li), cy: y(sr.values[li]), r: 4, fill: sr.color, stroke: "var(--surface)", "stroke-width": 2 }));
+      ends.push({ y: y(sr.values[li]), sr });
+    }
+    // Direct end labels only when they don't collide; otherwise the legend carries identity.
+    ends.sort((a, b) => a.y - b.y);
+    const apart = ends.every((e, i) => !i || e.y - ends[i - 1].y >= 16);
+    if (apart) for (const e of ends) svg.append(s("text", { class: "end-label", x: m.left + iw + 10, y: e.y + 4 }, e.sr.name));
+
+    const hair = s("line", { class: "crosshair", y1: m.top, y2: m.top + ih, visibility: "hidden" });
+    svg.append(hair);
+    const hit = s("rect", { x: m.left, y: m.top, width: iw, height: ih, fill: "transparent", tabindex: 0, "aria-label": "Use left and right arrow keys to read values" });
+    svg.append(hit);
+    let focusIndex = labels.length - 1;
+    const show = (i, cx, cy) => {
+      hair.setAttribute("x1", x(i)); hair.setAttribute("x2", x(i)); hair.setAttribute("visibility", "visible");
+      showTip(tipLabels[i], series.map((sr) => ({ color: sr.color, value: nf.format(sr.values[i]), label: sr.name })), cx, cy);
+    };
+    const toIndex = (clientX) => {
+      const r = svg.getBoundingClientRect();
+      const px = ((clientX - r.left) / r.width) * width;
+      return Math.max(0, Math.min(labels.length - 1, Math.round(((px - m.left) / iw) * (labels.length - 1))));
+    };
+    hit.addEventListener("pointermove", (e) => show(toIndex(e.clientX), e.clientX, e.clientY));
+    hit.addEventListener("pointerleave", () => { hair.setAttribute("visibility", "hidden"); hideTip(); });
+    const keyShow = () => { const r = svg.getBoundingClientRect(); show(focusIndex, r.left + (x(focusIndex) / width) * r.width, r.top + 20); };
+    hit.addEventListener("focus", keyShow);
+    hit.addEventListener("blur", () => { hair.setAttribute("visibility", "hidden"); hideTip(); });
+    hit.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowLeft") focusIndex = Math.max(0, focusIndex - 1);
+      else if (e.key === "ArrowRight") focusIndex = Math.min(labels.length - 1, focusIndex + 1);
+      else return;
+      e.preventDefault();
+      keyShow();
+    });
+
+    container.replaceChildren(svg, h("div", { class: "legend" },
+      series.map((sr) => h("span", {}, h("span", { class: "key-line", style: { background: sr.color } }), sr.name))));
+  });
+}
+
+// Horizontal bars, one hue (nominal categories), value at the tip.
+function barChart(container, rows, { unit }) {
+  const max = Math.max(1, ...rows.map((r) => r.value));
+  container.replaceChildren(h("div", { class: "bars" }, rows.map((r) => hoverable(
+    h("div", { class: "bar-row" },
+      h("span", { class: "bar-label", title: r.label }, r.label),
+      h("div", { class: "bar-track" }, h("div", { class: "bar", style: { width: `${(r.value / max) * 100}%` } })),
+      h("span", { class: "bar-value" }, fmtN(r.value))),
+    r.label, [{ value: nf.format(r.value), label: unit }]))));
+}
+
+// 100% part-to-whole bar, up to 4 segments (slots 1-4), 2px surface gaps, labelled legend.
+function stackBar(title, segments) {
+  const total = segments.reduce((a, b) => a + b.value, 0);
+  const shown = segments.filter((sg) => sg.value > 0);
+  return h("div", {},
+    h("div", { class: "stack-title" }, title),
+    total ? h("div", { class: "stack" }, shown.map((sg) => hoverable(
+      h("div", { class: "seg", style: { flexGrow: String(sg.value), background: sg.color } }),
+      `${title}: ${sg.label}`, [{ value: pct(sg.value, total), label: `${nf.format(sg.value)} total` }]))) : h("div", { class: "empty", style: { padding: "8px 0", textAlign: "left" } }, "No data yet."),
+    total ? h("div", { class: "legend" }, shown.map((sg) => h("span", {},
+      h("span", { class: "key-rect", style: { background: sg.color } }), `${sg.label} · ${pct(sg.value, total)}`))) : null);
+}
+
+// Vertical columns (one hue), 4px rounded top, label on the peak only.
+function columnChart(container, values, labelFor) {
+  responsive(container, (width) => {
+    const height = 180;
+    const m = { top: 18, right: 8, bottom: 24, left: 36 };
+    const iw = width - m.left - m.right;
+    const ih = height - m.top - m.bottom;
+    const max = Math.max(1, ...values);
+    const ticks = niceTicks(max, 3);
+    const top = ticks[ticks.length - 1];
+    const band = iw / values.length;
+    const bw = Math.min(24, band - 2);
+    const y = (v) => m.top + ih - (v / top) * ih;
+    const svg = s("svg", { class: "plot", viewBox: `0 0 ${width} ${height}`, height, role: "img", "aria-label": "Activity by hour" });
+    for (const t of ticks) {
+      svg.append(s("line", { class: t === 0 ? "base" : "gridline", x1: m.left, x2: m.left + iw, y1: y(t), y2: y(t) }));
+      svg.append(s("text", { class: "tick", x: m.left - 8, y: y(t) + 4, "text-anchor": "end" }, fmtN(t)));
+    }
+    const peak = values.indexOf(Math.max(...values));
+    values.forEach((v, i) => {
+      const cx = m.left + band * i + band / 2;
+      if (v > 0) {
+        const hgt = Math.max(2, (v / top) * ih);
+        const x0 = cx - bw / 2;
+        const y0 = m.top + ih - hgt;
+        const r = Math.min(4, bw / 2, hgt);
+        const d = `M${x0},${m.top + ih}V${y0 + r}Q${x0},${y0} ${x0 + r},${y0}H${x0 + bw - r}Q${x0 + bw},${y0} ${x0 + bw},${y0 + r}V${m.top + ih}Z`;
+        const bar = s("path", { d, fill: "var(--s1)" });
+        svg.append(hoverable(bar, labelFor(i), [{ value: nf.format(v), label: "actions" }]));
+        if (i === peak) svg.append(s("text", { class: "tick", x: cx, y: y0 - 5, "text-anchor": "middle" }, fmtN(v)));
+      }
+      if (i % 3 === 0) svg.append(s("text", { class: "tick", x: cx, y: height - 6, "text-anchor": "middle" }, String(i).padStart(2, "0")));
+    });
+    container.replaceChildren(svg);
+  });
+}
+
+function sparkline(values) {
+  const w = 240;
+  const hgt = 48;
+  const max = Math.max(1, ...values);
+  const x = (i) => (values.length === 1 ? w / 2 : (i / (values.length - 1)) * (w - 8) + 4);
+  const y = (v) => hgt - 4 - (v / max) * (hgt - 10);
+  const d = values.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join("");
+  const li = values.length - 1;
+  return s("svg", { viewBox: `0 0 ${w} ${hgt}`, width: "100%", height: hgt, "aria-hidden": "true", style: "max-width: 320px; overflow: visible" },
+    s("path", { d, fill: "none", stroke: "var(--s1)", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }),
+    s("circle", { cx: x(li), cy: y(values[li]), r: 4, fill: "var(--s1)", stroke: "var(--surface)", "stroke-width": 2 }));
+}
+
+function delta(now, before, prevLabel) {
+  if (!before && !now) return h("span", { class: "delta" }, `No activity in the ${prevLabel} either`);
+  if (!before) return h("span", { class: "delta" }, `New · nothing in the ${prevLabel}`);
+  const change = (now - before) / before;
+  if (Math.abs(change) < 0.005) return h("span", { class: "delta" }, `No change vs ${prevLabel}`);
+  const up = change > 0;
+  const arrow = s("svg", { viewBox: "0 0 10 10", "aria-hidden": "true" }, s("path", { d: up ? "M5 1.5 9 8.5H1z" : "M5 8.5 1 1.5h8z", fill: "currentColor" }));
+  return h("span", { class: `delta ${up ? "up" : "down"}` }, arrow, `${up ? "+" : "−"}${Math.round(Math.abs(change) * 100)}% vs ${prevLabel}`);
+}
+
+/* ---------- Page ---------- */
+
+function renderRange() {
+  const check = () => s("svg", { class: "check", viewBox: "0 0 16 16", "aria-hidden": "true" }, s("path", { d: "M3.5 8.5l3 3 6-7", fill: "none", stroke: "currentColor", "stroke-width": 2.2, "stroke-linecap": "round", "stroke-linejoin": "round" }));
+  $("range").replaceChildren(...RANGES.map((r) => h("button", { type: "button", "aria-pressed": String(r.key === range), onclick: () => {
+    if (r.key === range) return;
+    range = r.key;
+    history.replaceState(null, "", `?range=${range}`);
+    renderRange();
+    load();
+  } }, check(), r.label)));
+}
+
+function trendSeries(st) {
+  const byBucket = new Map(st.trend.map((t) => [String(t.bucket), t]));
+  const labels = [];
+  const tipLabels = [];
+  const users = [];
+  const opens = [];
+  if (st.range === "today") {
+    const hourNow = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Baghdad", hour: "2-digit", hourCycle: "h23" }).format(new Date()));
+    for (let hr = 0; hr <= hourNow; hr++) {
+      const t = byBucket.get(String(hr));
+      labels.push(`${String(hr).padStart(2, "0")}:00`);
+      tipLabels.push(`Today ${String(hr).padStart(2, "0")}:00–${String(hr).padStart(2, "0")}:59`);
+      users.push(t ? t.users : 0);
+      opens.push(t ? t.opens : 0);
+    }
+  } else {
+    const dayMs = 86_400_000;
+    const fmt = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+    const fmtLong = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
+    for (let i = 0; i < st.days; i++) {
+      const date = new Date(st.start + 3 * 3600 * 1000 + i * dayMs);
+      const key = date.toISOString().slice(0, 10);
+      const t = byBucket.get(key);
+      labels.push(fmt.format(date));
+      tipLabels.push(fmtLong.format(date));
+      users.push(t ? t.users : 0);
+      opens.push(t ? t.opens : 0);
+    }
+  }
+  return { labels, tipLabels, users, opens };
+}
+
+function sumBy(rows, keyFn, valueFn = (r) => r.n) {
+  const map = new Map();
+  for (const r of rows) {
+    const k = keyFn(r);
+    if (k == null) continue;
+    map.set(k, (map.get(k) || 0) + valueFn(r));
+  }
+  return map;
+}
+
+// Top N rows plus an "Other" row, so bars never need more than one hue.
+function topWithOther(entries, n) {
+  const sorted = [...entries].sort((a, b) => b.value - a.value);
+  if (sorted.length <= n) return sorted;
+  const rest = sorted.slice(n - 1).reduce((a, b) => a + b.value, 0);
+  return [...sorted.slice(0, n - 1), { label: "Other", value: rest }];
+}
+
+function segmentsFor(prefs, dim, names) {
+  const rows = prefs.filter((p) => p.dim === dim);
+  const known = Object.keys(names);
+  const segs = known.map((k, i) => ({ label: names[k], value: rows.filter((r) => r.k === k).reduce((a, b) => a + b.n, 0), color: SERIES[i] }));
+  const other = rows.filter((r) => !known.includes(r.k)).reduce((a, b) => a + b.n, 0);
+  if (other) segs.push({ label: "Other", value: other, color: "var(--muted)" });
+  return segs;
+}
+
+function render(st) {
+  const r = RANGES.find((x) => x.key === st.range);
+  const k = st.kpi;
+  const p = st.previous;
+  const trend = trendSeries(st);
+
+  const hero = h("section", { class: "card" }, h("div", { class: "hero" },
+    h("div", {},
+      h("div", { class: "hero-label" }, "Unique users"),
+      h("div", { class: "hero-value" }, nf.format(k.users)),
+      delta(k.users, p.users, r.prev)),
+    h("div", {}, sparkline(trend.users), h("div", { class: "hint", style: { color: "var(--muted)", fontSize: "12.5px" } }, "People who opened the app or used the bot"))));
+
+  const tile = (label, now, before) => h("div", { class: "tile" }, h("div", { class: "tile-label" }, label), h("div", { class: "tile-value" }, fmtN(now)), delta(now, before, r.prev));
+  const tiles = h("div", { class: "tiles" },
+    tile("App opens", k.opens, p.opens),
+    tile("Telegram users", k.telegram_users, p.telegram_users),
+    tile("Browser visitors", k.browser_users, p.browser_users),
+    tile("Bot users", k.bot_users, p.bot_users),
+    tile("Bot actions", k.bot_actions, p.bot_actions),
+    tile("Shares from the app", k.shares, p.shares));
+
+  const hasTrend = trend.users.some((v) => v) || trend.opens.some((v) => v);
+  const activity = card({
+    title: st.range === "today" ? "Activity today, by hour" : "Daily activity",
+    hint: "Unique users and app opens",
+    empty: !hasTrend,
+    chart: (el) => lineChart(el, { labels: trend.labels, tipLabels: trend.tipLabels, series: [
+      { name: "Unique users", color: "var(--s1)", values: trend.users },
+      { name: "App opens", color: "var(--s2)", values: trend.opens },
+    ] }),
+    table: () => dataTable([st.range === "today" ? "Hour" : "Day", "Unique users", "App opens"], trend.tipLabels.map((l, i) => [l, trend.users[i], trend.opens[i]])),
+  });
+
+  const platformRows = topWithOther(st.platforms.map((x) => ({ label: PLATFORMS[x.k] || x.k || "Unknown", value: x.users })), 6);
+  const platforms = card({
+    title: "Platforms", hint: "Unique users who opened the app", span: "span-6", empty: !platformRows.length,
+    chart: (el) => barChart(el, platformRows, { unit: "users" }),
+    table: () => dataTable(["Platform", "Users", "Opens"], st.platforms.map((x) => [PLATFORMS[x.k] || x.k || "Unknown", x.users, x.n])),
+  });
+
+  const countryRows = topWithOther(st.countries.map((x) => ({ label: country(x.k), value: x.users })), 8);
+  const countries = card({
+    title: "Countries", hint: "Unique users who opened the app", span: "span-6", empty: !countryRows.length,
+    chart: (el) => barChart(el, countryRows, { unit: "users" }),
+    table: () => dataTable(["Country", "Users", "Opens"], st.countries.map((x) => [country(x.k), x.users, x.n])),
+  });
+
+  const usageSets = [
+    ["How the app was opened", segmentsFor(st.prefs, "ref", REFS)],
+    ["Tab viewed", segmentsFor(st.prefs, "tab", TABS)],
+    ["Language", segmentsFor(st.prefs, "lang", LANGS)],
+    ["Theme", segmentsFor(st.prefs, "theme", THEMES)],
+  ];
+  const usage = card({
+    title: "How people use the app", hint: "Share of app opens (tab views include switching tabs)", span: "span-6",
+    empty: !usageSets.some(([, segs]) => segs.some((sg) => sg.value)),
+    chart: (el) => el.replaceChildren(h("div", { class: "stacks" }, usageSets.map(([title, segs]) => stackBar(title, segs)))),
+    table: () => dataTable(["Group", "Value", "Opens", "Share"], usageSets.flatMap(([title, segs]) => {
+      const total = segs.reduce((a, b) => a + b.value, 0);
+      return segs.map((sg) => [title, sg.label, sg.value, pct(sg.value, total)]);
+    })),
+  });
+
+  const botMap = sumBy(st.bot, (b) => (b.event === "command" ? `command:${b.detail}` : b.event in COMMANDS ? b.event : null));
+  const botRows = [...botMap].map(([key, value]) => ({ label: COMMANDS[key] || key, value }));
+  const chatMap = sumBy(st.bot.filter((b) => ["command", "text", "button", "inline"].includes(b.event)), (b) => (b.platform === "supergroup" ? "group" : b.platform));
+  const chatSegs = [["private", "Private chats"], ["group", "Groups"], ["channel", "Channels"], ["inline", "Inline (any chat)"]]
+    .map(([key, label], i) => ({ label, value: chatMap.get(key) || 0, color: SERIES[i] }));
+  const bot = card({
+    title: "Bot", hint: "Commands, button taps and inline searches", span: "span-6", empty: !botRows.length,
+    chart: (el) => {
+      const barsEl = h("div");
+      barChart(barsEl, topWithOther(botRows, 8), { unit: "times" });
+      el.replaceChildren(barsEl, h("div", { style: { marginTop: "18px" } }, stackBar("Where people use it", chatSegs)));
+    },
+    table: () => dataTable(["Action", "Times"], [...botRows.sort((a, b) => b.value - a.value).map((x) => [x.label, x.value]),
+      ...chatSegs.map((sg) => [`Where: ${sg.label}`, sg.value])]),
+  });
+
+  const hourly = Array.from({ length: 24 }, (_, i) => st.hours.find((x) => x.hour === i)?.n || 0);
+  const hours = card({
+    title: "When people check the rates", hint: "App and bot actions by hour, Baghdad time", span: "span-8", empty: !hourly.some((v) => v),
+    chart: (el) => columnChart(el, hourly, (i) => `${String(i).padStart(2, "0")}:00–${String(i).padStart(2, "0")}:59`),
+    table: () => dataTable(["Hour", "Actions"], hourly.map((v, i) => [`${String(i).padStart(2, "0")}:00`, v])),
+  });
+
+  const cron = Object.fromEntries(st.cron.map((c) => [c.event, c.n]));
+  const cur = st.current;
+  const automation = h("section", { class: "card span-4" },
+    h("div", { class: "card-head" }, h("div", {}, h("h2", {}, "Automations"), h("p", { class: "hint" }, "Daily summaries and price alerts"))),
+    h("div", { class: "tiles", style: { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" } },
+      h("div", { class: "tile" }, h("div", { class: "tile-label" }, "Summaries sent"), h("div", { class: "tile-value" }, fmtN(cron.summary_sent || 0))),
+      h("div", { class: "tile" }, h("div", { class: "tile-label" }, "Alerts sent"), h("div", { class: "tile-value" }, fmtN(cron.alert_sent || 0))),
+      h("div", { class: "tile" }, h("div", { class: "tile-label" }, "Subscribed chats now"), h("div", { class: "tile-value" }, fmtN(cur.private_subscriptions + cur.group_subscriptions)),
+        h("div", { class: "delta" }, `${nf.format(cur.private_subscriptions)} private · ${nf.format(cur.group_subscriptions)} groups/channels`)),
+      h("div", { class: "tile" }, h("div", { class: "tile-label" }, "Active alerts now"), h("div", { class: "tile-value" }, fmtN(cur.alerts)))));
+
+  $("main").replaceChildren(h("div", { class: "grid" },
+    hero,
+    h("div", { style: { gridColumn: "span 12" } }, tiles),
+    activity, platforms, countries, usage, bot, hours, automation));
+  $("updated").textContent = `Updated ${new Date(st.generatedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Baghdad" })} Baghdad time`;
+}
+
+async function load() {
+  const main = $("main");
+  if (stats) main.classList.add("refreshing");
+  else main.replaceChildren(h("div", { class: "empty" }, "Loading…"));
+  try {
+    const res = await fetch(`/admin/api/stats?range=${range}`, { cache: "no-store", credentials: "same-origin" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    stats = await res.json();
+    render(stats);
+  } catch (err) {
+    main.replaceChildren(h("div", { class: "error" }, `Couldn't load the numbers (${err.message}). Try Refresh.`));
+  } finally {
+    main.classList.remove("refreshing");
+  }
+}
+
+$("reload").addEventListener("click", load);
+renderRange();
+load();
+</script>
+</body>
+</html>

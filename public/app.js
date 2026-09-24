@@ -11,7 +11,8 @@ const CACHE_KEY = "borsa:last";
 const GOLD_CACHE_KEY = "borsa:gold";
 const PREFS_KEY = "borsa:prefs";
 // Link included when sharing rates; opens the Mini App directly in Telegram.
-const SHARE_URL = "https://t.me/IraqDollarExchangeBot?startapp";
+// The start parameter lets analytics count opens that came from a share.
+const SHARE_URL = "https://t.me/IraqDollarExchangeBot?startapp=share";
 
 const CITIES = [
   { key: "b", ar: "بغداد", en: "Baghdad" },
@@ -85,6 +86,10 @@ const STR = {
         title: "حدود المسؤولية وإسقاط المطالبات",
         text: "يُقر المستخدم بأن اعتماده على أي رقم أو معلومة معروضة هو قرار شخصي يتحمل مسؤوليته كاملة، ويُسقط حقه في أي مطالبة تجاه إدارة التطبيق عن أي خسارة أو ضرر مباشر أو غير مباشر ناتج عن استخدامه.",
       },
+      {
+        title: "الخصوصية",
+        text: "يسجّل التطبيق إحصاءات استخدام مجهولة الهوية، مثل عدد مرات الفتح ونوع الجهاز والدولة واللغة، لتحسين الخدمة. لا يحتفظ التطبيق بأسماء المستخدمين أو أرقامهم أو معرّفاتهم في تيليجرام، وتُحذف هذه الإحصاءات تلقائياً بعد 90 يوماً.",
+      },
     ],
     errorTitle: "تعذّر جلب الأسعار",
     errorBody: "تحقق من اتصالك بالإنترنت ثم حاول مجدداً",
@@ -155,6 +160,10 @@ const STR = {
         title: "Limitation of liability",
         text: "By using the app, you acknowledge that relying on any figure or information shown is your own decision and responsibility, and you waive any claim against the app's operators for any direct or indirect loss or damage arising from its use.",
       },
+      {
+        title: "Privacy",
+        text: "The app records anonymous usage statistics, such as how often it's opened and the device type, country and language, to improve the service. It doesn't keep users' names, phone numbers or Telegram ids, and these statistics are deleted automatically after 90 days.",
+      },
     ],
     errorTitle: "Couldn't load rates",
     errorBody: "Check your internet connection and try again",
@@ -183,6 +192,49 @@ const haptic = {
   success: () => hasHaptics && tg.HapticFeedback.notificationOccurred("success"),
   error: () => hasHaptics && tg.HapticFeedback.notificationOccurred("error"),
 };
+
+/* ---------- Analytics ---------- */
+
+// How this session was opened: from a shared message, the bot, the chat menu, or directly.
+const entryRef = (() => {
+  const start = tg?.initDataUnsafe?.start_param;
+  if (start) return start === "share" || start === "bot" ? start : "link";
+  const from = new URLSearchParams(location.search).get("from");
+  return from === "bot" || from === "menu" ? from : "direct";
+})();
+
+function anonId() {
+  try {
+    let id = localStorage.getItem("borsa:anon");
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem("borsa:anon", id);
+    }
+    return id;
+  } catch {
+    return null;
+  }
+}
+
+// Fire-and-forget usage event. The server verifies Telegram's signed initData, so only
+// real Telegram users count as such; ids are stored hashed.
+function track(event, fields = {}) {
+  const payload = {
+    event,
+    platform: inTelegram ? tg.platform : "browser",
+    lang: state.lang,
+    theme: document.documentElement.dataset.scheme,
+    initData: inTelegram ? tg.initData : "",
+    anon: anonId(),
+    ...fields,
+  };
+  try {
+    const body = new Blob([JSON.stringify(payload)], { type: "application/json" });
+    if (!navigator.sendBeacon?.("/api/event", body)) {
+      fetch("/api/event", { method: "POST", body, keepalive: true }).catch(() => {});
+    }
+  } catch {}
+}
 
 /* ---------- State ---------- */
 
@@ -705,6 +757,7 @@ function shareText() {
 
 async function share() {
   haptic.tap();
+  track("share", { detail: state.tab });
   const text = shareText();
   if (!text) return;
   const url = SHARE_URL || location.origin;
@@ -742,6 +795,7 @@ let sheetTimer = 0;
 
 function openLegal() {
   haptic.tap();
+  track("legal");
   const sheet = els.legalSheet;
   clearTimeout(sheetTimer);
   sheet.hidden = false;
@@ -823,6 +877,7 @@ function langPopRows() {
 function toggleLanguage() {
   if (switching) return;
   haptic.select();
+  track("lang", { detail: state.lang === "ar" ? "en" : "ar" });
   popTransition(langPopRows(), () => {
     state.lang = state.lang === "ar" ? "en" : "ar";
     savePrefs();
@@ -835,6 +890,7 @@ function toggleLanguage() {
 function selectTab(tab) {
   if (tab === state.tab || switching) return;
   haptic.select();
+  track("tab", { detail: tab });
   const rows = () => [...contentRows(state.tab), [els.foot]];
   const before = rows();
   state.tab = tab;
@@ -881,6 +937,7 @@ function toggleTheme() {
   // Picking the scheme Telegram/the system already uses goes back to following it.
   state.theme = next === systemScheme() ? null : next;
   savePrefs();
+  track("theme", { detail: next });
 
   if (reducedMotion.matches) {
     applyScheme();
@@ -912,7 +969,10 @@ function toggleTheme() {
 /* ---------- Events ---------- */
 
 function bindEvents() {
-  els.refreshBtn.addEventListener("click", () => load({ manual: true }));
+  els.refreshBtn.addEventListener("click", () => {
+    track("refresh");
+    load({ manual: true });
+  });
   for (const btn of [els.retryBtn, els.goldRetry]) {
     btn.addEventListener("click", () => {
       state.failed = state.goldFailed = false;
@@ -988,6 +1048,7 @@ function init() {
   renderAll();
   moveThumb({ instant: true });
   bindEvents();
+  track("open", { detail: state.tab, ref: entryRef });
 
   if (inTelegram) {
     tg.ready();

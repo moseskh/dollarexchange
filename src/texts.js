@@ -2,7 +2,8 @@
 
 export const BOT_USERNAME = "IraqDollarExchangeBot";
 // Opens the Mini App from anywhere (groups, channels and inline messages can't use web_app buttons).
-export const APP_LINK = `https://t.me/${BOT_USERNAME}?startapp`;
+// The start parameter tells analytics the app was opened from the bot.
+export const APP_LINK = `https://t.me/${BOT_USERNAME}?startapp=bot`;
 
 export const langOf = (code) => (String(code || "").toLowerCase().startsWith("en") ? "en" : "ar");
 
