@@ -2,9 +2,26 @@
   "name": "dollarexchange",
   "main": "src/worker.js",
   "compatibility_date": "2026-09-01",
-  // Files in ./public are served as-is; anything else (i.e. /api/rates) reaches the worker.
+  // Files in ./public are served as-is; anything else (the APIs and the bot webhook) reaches the worker.
   "assets": {
     "directory": "./public",
     "binding": "ASSETS"
+  },
+  "vars": {
+    // Used for "Open the app" buttons in messages the bot sends on a schedule.
+    "APP_URL": "https://dollarexchange.mosakh.workers.dev"
+  },
+  // Daily-summary subscriptions and price alerts.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "iraq-exchange",
+      "database_id": "2cb8aa47-9ee1-479a-9741-71819fceb7d9",
+      "migrations_dir": "migrations"
+    }
+  ],
+  // Every 5 minutes: send price alerts that have been reached and any daily summaries due.
+  "triggers": {
+    "crons": ["*/5 * * * *"]
   }
 }

@@ -23,8 +23,14 @@ A Telegram Mini App that shows the USD → IQD borsa rates (sell / buy) for Bagh
 | `public/app.js` | App logic: data, rendering, sharing, Telegram integration |
 | `public/fonts/` | IBM Plex Sans Arabic, self-hosted (SIL Open Font License, see `OFL.txt`) |
 | `public/_headers` | Caches font files for a year |
-| `src/worker.js` | Cloudflare Worker: serves the page, `GET /api/rates` (dollar), `GET /api/gold` (world gold price) and the bot webhook |
-| `wrangler.jsonc` | Worker config |
+| `public/bot/` | Thumbnails for the bot's inline results |
+| `src/worker.js` | Cloudflare Worker entry: serves the page, `GET /api/rates` (dollar), `GET /api/gold` (world gold price), the bot webhook, and the 5-minute cron |
+| `src/rates.js` | Fetches and caches the upstream prices; gold-per-mithqal math |
+| `src/bot.js` | The Telegram bot: commands, action buttons, inline mode, groups, summaries and alerts |
+| `src/texts.js` | Everything the bot says (Arabic and English), its profile and command menus |
+| `src/telegram.js` | Small Bot API client |
+| `migrations/` | Database schema (Cloudflare D1) for subscriptions and alerts |
+| `wrangler.jsonc` | Worker config: static files, database, cron trigger |
 
 `/api/rates` proxies `https://iraqborsa.com/borsa-api/summary.php`. The page can't call that API directly because it sends no CORS headers, so browsers block the request. The Worker caches the upstream response for 30 seconds, so the source isn't hit on every app open.
 
@@ -59,8 +65,24 @@ To set it up on a new Cloudflare account, create the Worker once (`npx wrangler 
 
 The app runs as the Main Mini App of [@IraqDollarExchangeBot](https://t.me/IraqDollarExchangeBot). Direct link: https://t.me/IraqDollarExchangeBot?startapp
 
-- **Mini App:** in @BotFather, `/mybots` → the bot → **Bot Settings → Configure Mini App** points at the Worker URL.
-- **Bot replies:** the Worker answers the bot at `/telegram/webhook`. Tapping **Start**, or sending any message, gets a welcome with an "Open the app" button, and the chat's menu button opens the app.
+### What the bot does
+
+| Command | What it does | Where |
+| --- | --- | --- |
+| `/dollar` | Dollar rates for the three cities | Private, groups, channels |
+| `/gold` | Gold per mithqal, in dinars and dollars | Private, groups, channels |
+| `/alert 1580` | Messages you once when Baghdad's sell rate reaches the price (Arabic digits and per-$100 quotes like `158000` work) | Private |
+| `/subscribe [hour]` | Daily summary at that hour, Baghdad time (default 10). In groups, admins only. In channels, add `en` for English | Private, groups, channels |
+| `/unsubscribe` | Stops the daily summary | Private, groups, channels |
+| `/help`, `/start` | Welcome and commands | Anywhere |
+
+- **Action buttons:** every rates message has 🔄 Refresh and a Dollar/Gold switch that edit the message in place, plus an "Open the app" button. That's a `web_app` button in private chats, and a `t.me/...?startapp` link elsewhere, because Telegram only allows `web_app` buttons in private chats.
+- **Inline mode:** typing `@IraqDollarExchangeBot` in any chat offers dollar and gold messages to send.
+- **Groups:** privacy mode stays on, so the bot only sees its own commands. It replies to the command, posts a short intro when added, and drops that chat's subscription when removed.
+- **Scheduled:** a cron trigger runs every 5 minutes. It sends alerts that have been reached and daily summaries that are due, up to 20 of each per run (Workers' outgoing-request limit), then removes alerts and subscriptions for chats that blocked or removed the bot.
+- **Language:** replies follow the user's Telegram language (Arabic by default). Summaries and alerts keep the language they were set up in.
+
+### Setup
 
 The bot needs two secrets on the Worker (**Workers & Pages → dollarexchange → Settings → Variables and Secrets**, type *Secret*). They're never stored in the repo:
 
@@ -69,10 +91,20 @@ The bot needs two secrets on the Worker (**Workers & Pages → dollarexchange �
 | `BOT_TOKEN` | The token from @BotFather |
 | `WEBHOOK_SECRET` | Any random string (letters, digits, `_`, `-`) |
 
-After setting them, register the webhook once:
+After setting them, register the bot once. This sets the webhook, command menus, and the bot's name and descriptions from `src/texts.js`:
 
 ```sh
 curl -X POST https://dollarexchange.mosakh.workers.dev/telegram/setup -H "Authorization: Bearer <WEBHOOK_SECRET>"
+```
+
+Inline mode must be switched on once in @BotFather (`/setinline`).
+
+### Database
+
+Subscriptions and alerts live in the Cloudflare D1 database `iraq-exchange`. Pushes don't change its schema: after adding a file to `migrations/`, apply it with:
+
+```sh
+npx wrangler d1 migrations apply iraq-exchange --remote
 ```
 
 ## Customising
