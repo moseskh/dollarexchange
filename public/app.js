@@ -1272,8 +1272,31 @@ function applyScheme() {
   const root = document.documentElement;
   root.dataset.scheme = scheme;
   root.dataset.palette = inTelegram && scheme === systemScheme() ? "telegram" : "app";
+  guardAccent(scheme);
   els.themeBtn.setAttribute("aria-pressed", String(scheme === "dark"));
   syncTelegramChrome();
+}
+
+// Some Telegram themes give a colourless accent (white, black or grey). Every tint and
+// gradient is mixed from the accent, so they would come out white or grey; use the app's
+// own blue instead.
+function guardAccent(scheme) {
+  const root = document.documentElement;
+  root.style.removeProperty("--c-accent");
+  const accent = getComputedStyle(root).getPropertyValue("--c-accent").trim();
+  if (isColourless(accent)) root.style.setProperty("--c-accent", scheme === "dark" ? "#4c9ce6" : "#2481cc");
+}
+
+function isColourless(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return false;
+  const n = parseInt(m[1], 16);
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => v / 255);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const light = (max + min) / 2;
+  const sat = max === min ? 0 : (max - min) / (1 - Math.abs(2 * light - 1));
+  return sat < 0.25 || light > 0.9 || light < 0.1;
 }
 
 // Paint Telegram's header, background and bottom bar to match the page.

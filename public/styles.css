@@ -82,9 +82,15 @@
   --c-surface: var(--tg-theme-section-bg-color, var(--tg-theme-bg-color, var(--fb-surface)));
   --c-text: var(--tg-theme-text-color, var(--fb-text));
   --c-hint: var(--tg-theme-hint-color, var(--fb-hint));
-  --c-accent: var(--tg-theme-button-color, var(--fb-accent));
-  --c-on-accent: var(--tg-theme-button-text-color, var(--fb-on-accent));
-  --c-link: var(--tg-theme-accent-text-color, var(--tg-theme-link-color, var(--c-accent)));
+  /* The theme's accent hue, for tints, gradients, lines and links. It comes from Telegram's
+     accent/link colour, not its button colour: some themes (Telegram for iPhone in dark
+     mode) use white buttons with black text, which would turn every tint white. app.js
+     also swaps in the app's blue if a theme's accent is colourless. */
+  --c-accent: var(--tg-theme-accent-text-color, var(--tg-theme-link-color, var(--tg-theme-button-color, var(--fb-accent))));
+  --c-link: var(--c-accent);
+  /* Filled buttons keep Telegram's own button colours, so they look native. */
+  --c-button: var(--tg-theme-button-color, var(--fb-accent));
+  --c-on-button: var(--tg-theme-button-text-color, var(--fb-on-accent));
 
   /* Tints: rgba fallbacks, refined with color-mix where supported */
   --c-sep: rgba(128, 128, 128, 0.18);
@@ -105,8 +111,9 @@
   --c-text: var(--fb-text);
   --c-hint: var(--fb-hint);
   --c-accent: var(--fb-accent);
-  --c-on-accent: var(--fb-on-accent);
-  --c-link: var(--fb-accent);
+  --c-link: var(--c-accent);
+  --c-button: var(--fb-accent);
+  --c-on-button: var(--fb-on-accent);
 }
 :root[data-scheme="dark"] { color-scheme: dark; }
 
@@ -239,8 +246,8 @@ svg { display: block; flex-shrink: 0; }
   height: 46px;
   padding: 0 28px;
   border-radius: var(--r-md);
-  background: var(--c-accent);
-  color: var(--c-on-accent);
+  background: var(--c-button);
+  color: var(--c-on-button);
   font-weight: 600;
 }
 
@@ -326,7 +333,7 @@ svg { display: block; flex-shrink: 0; }
   display: grid;
   place-items: center;
   background: var(--c-accent);
-  color: var(--c-on-accent);
+  color: #fff;
   font-size: 21px;
   font-weight: 700;
   flex-shrink: 0;
