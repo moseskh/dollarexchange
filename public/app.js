@@ -71,10 +71,6 @@ const STR = {
     historyRanges: { "12h": "14 يوم", "1d": "60 يوم", "1w": "10 أسابيع" },
     historySpan: (days) => `خلال ${days} يوم`,
     historyError: "تعذّر تحميل تاريخ السعر.",
-    historyTable: "جدول",
-    historyChart: "الرسم",
-    historyDate: "التاريخ",
-    historyPrice: "السعر",
     historyLabel: (from, to, low, high) => `سعر السوق من ${from} إلى ${to}، بين ${low} و ${high} دينار`,
     shareMarket: (mid, gap) => `متوسط السوق: ${mid}${gap ? ` · ${gap} عن السعر الرسمي` : ""}`,
     goldFootnote: "السعر العالمي للذهب لكل مثقال (5 غرامات)، محوّلاً إلى الدينار بسعر بيع الدولار في بغداد. قد يختلف عن أسعار محلات الذهب.",
@@ -159,10 +155,6 @@ const STR = {
     historyRanges: { "12h": "14 days", "1d": "60 days", "1w": "10 weeks" },
     historySpan: (days) => `over ${days} days`,
     historyError: "Couldn't load the price history.",
-    historyTable: "Table",
-    historyChart: "Chart",
-    historyDate: "Date",
-    historyPrice: "Price",
     historyLabel: (from, to, low, high) => `Market price from ${from} to ${to}, between ${low} and ${high} dinars`,
     shareMarket: (mid, gap) => `Market average: ${mid}${gap ? ` · ${gap} vs the official rate` : ""}`,
     goldFootnote: "World gold price per mithqal (5 g), converted to dinars at Baghdad's dollar sell rate. Gold shops may charge more.",
@@ -285,7 +277,6 @@ const state = {
   historyTf: HISTORY_TFS.includes(prefs.historyTf) ? prefs.historyTf : "1d",
   history: {}, // tf -> { points: [{ t, mid }], at }
   historyFailed: {},
-  historyTable: false,
   goldAt: 0,
   goldFailed: false,
   loading: false,
@@ -475,10 +466,8 @@ function buildCards() {
           </div>
         </div>
         <div class="history-chart" data-role="hchart"></div>
-        <div class="history-table" data-role="htable" hidden></div>
         <div class="history-foot">
           <span class="history-change" data-role="hchange"></span>
-          <button class="link-btn" type="button" data-role="htoggle"></button>
         </div>
       </div>
       <div class="market-updated" data-role="updated"></div>
@@ -505,7 +494,7 @@ function buildCards() {
     card: marketCard,
     main: marketCard.querySelector(".market-main"),
     tfButtons: [...marketCard.querySelectorAll(".history-tfs button")],
-    ...Object.fromEntries(["mid", "per100", "pre", "post", "change", "sell", "buy", "spread", "spreadPct", "gap", "gapPct", "updated", "hchart", "htable", "hchange", "htoggle"].map((r) => [r, mq(r)])),
+    ...Object.fromEntries(["mid", "per100", "pre", "post", "change", "sell", "buy", "spread", "spreadPct", "gap", "gapPct", "updated", "hchart", "hchange"].map((r) => [r, mq(r)])),
   };
 
   els.cardEls = Object.fromEntries(CITIES.map((c) => {
@@ -754,14 +743,10 @@ function renderHistory() {
     b.textContent = s.historyRanges[b.dataset.tf];
     b.setAttribute("aria-checked", String(b.dataset.tf === tf));
   });
-  r.htoggle.textContent = state.historyTable ? s.historyChart : s.historyTable;
-  r.htoggle.hidden = !entry;
 
   if (!entry) {
     r.hchange.textContent = state.historyFailed[tf] ? s.historyError : "";
     r.hchange.className = "history-change";
-    r.hchart.hidden = false;
-    r.htable.hidden = true;
     r.hchart.replaceChildren(Object.assign(document.createElement("div"), { className: state.historyFailed[tf] ? "history-empty" : "history-empty sk" }));
     return;
   }
@@ -779,24 +764,7 @@ function renderHistory() {
   const sign = dir > 0 ? "+" : dir < 0 ? "−" : "";
   r.hchange.innerHTML = `<span class="h-val">${dir ? arrow(dir) : ""}<span class="num">${sign}${fmt.format(Math.abs(diff))}</span><span>${s.iqd}</span><span class="d-sep">·</span><span class="num">${sign}${Math.abs(pct).toFixed(2)}%</span></span><span>${s.historySpan(days)}</span>`;
 
-  r.hchart.hidden = state.historyTable;
-  r.htable.hidden = !state.historyTable;
-  if (state.historyTable) renderHistoryTable(pts, tf);
-  else drawHistory();
-}
-
-function renderHistoryTable(pts, tf) {
-  const s = t();
-  const table = document.createElement("table");
-  const head = table.createTHead().insertRow();
-  for (const label of [s.historyDate, s.historyPrice]) head.appendChild(Object.assign(document.createElement("th"), { textContent: label }));
-  const body = table.createTBody();
-  for (const p of [...pts].reverse()) {
-    const row = body.insertRow();
-    row.insertCell().textContent = historyDate(p.t, tf === "12h");
-    Object.assign(row.insertCell(), { textContent: fmt.format(p.mid), className: "num" });
-  }
-  els.market.htable.replaceChildren(table);
+  drawHistory();
 }
 
 // One series (the market middle price): 2px line over a soft wash, clean ticks, end dot,
@@ -1369,17 +1337,13 @@ function bindEvents() {
   });
   els.shareBtn.addEventListener("click", share);
   els.market.tfButtons.forEach((b) => b.addEventListener("click", () => selectHistoryTf(b.dataset.tf)));
-  els.market.htoggle.addEventListener("click", () => {
-    state.historyTable = !state.historyTable;
-    renderHistory();
-  });
   // Redraw the chart to the card's width (first layout, rotation, desktop resize).
   let chartWidth = 0;
   new ResizeObserver(([entry]) => {
     const w = Math.round(entry.contentRect.width);
     if (w && w !== chartWidth) {
       chartWidth = w;
-      if (!state.historyTable) drawHistory();
+      drawHistory();
     }
   }).observe(els.market.hchart);
   els.legalBtn.addEventListener("click", openLegal);

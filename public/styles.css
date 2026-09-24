@@ -700,12 +700,6 @@ a.source-pill { color: var(--c-link); text-decoration: none; font-weight: 600; }
 .history-change .d-sep { opacity: 0.45; }
 .history-change.up .h-val { color: var(--up); }
 .history-change.down .h-val { color: var(--down); }
-.history-foot .link-btn { font-size: var(--fs-caption); }
-.history-table { max-height: 190px; overflow-y: auto; overscroll-behavior: contain; }
-.history-table table { width: 100%; border-collapse: collapse; font-size: var(--fs-caption); }
-.history-table th, .history-table td { padding: 5px 4px; border-bottom: 1px solid var(--c-sep); text-align: start; }
-.history-table th { color: var(--c-hint); font-weight: 500; position: sticky; top: 0; background: var(--c-surface); }
-.history-table td.num { text-align: end; font-weight: 600; }
 
 /* Share */
 .share-btn {
