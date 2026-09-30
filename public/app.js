@@ -11,11 +11,15 @@ const CACHE_MAX_AGE_MS = 24 * 60 * 60_000;
 const CACHE_KEY = "borsa:last";
 const GOLD_CACHE_KEY = "borsa:gold";
 const MARKET_CACHE_KEY = "borsa:market";
+// usdiqd.com is sending wrong prices (September 2026), so its market card is switched off
+// and nothing is fetched from it. Set to true to bring the card back; MARKET_ENABLED in
+// src/rates.js is the matching switch for the gold chart's dinar conversion.
+const SHOW_MARKET = false;
 const HISTORY_API_URL = "/api/market/history";
 const HISTORY_TFS = ["12h", "1d", "1w"]; // 14 days every 12h · 60 days daily · ~10 weeks weekly
 const HISTORY_MAX_AGE_MS = 5 * 60_000; // the source updates its history every few minutes at most
 const GOLD_HISTORY_API_URL = "/api/gold/history";
-const GOLD_HISTORY_CACHE_KEY = "borsa:goldHistory";
+const GOLD_HISTORY_CACHE_KEY = "borsa:goldHistory:v2"; // v2: entries record the dollar rate used
 const GOLD_HISTORY_DAYS = { "12h": 14, "1d": 60, "1w": 70 }; // the dollar chart's ranges, from daily points
 const GOLD_HISTORY_MAX_AGE_MS = 30 * 60_000; // the Worker refreshes it hourly
 const PREFS_KEY = "borsa:prefs";
@@ -76,7 +80,7 @@ const STR = {
     historySpan: (days) => `خلال ${days} يوم`,
     historyError: "تعذّر تحميل تاريخ السعر.",
     goldHistoryTitle: "تاريخ سعر عيار 21",
-    goldHistoryNote: "لكل مثقال، بمتوسط سعر الدولار في السوق لكل يوم.",
+    goldHistoryNotes: { market: "لكل مثقال، بمتوسط سعر الدولار في السوق لكل يوم.", baghdad: "لكل مثقال، بسعر بيع الدولار في بغداد اليوم." },
     goldHistoryLabel: (from, to, low, high) => `سعر مثقال الذهب عيار 21 من ${from} إلى ${to}، بين ${low} و ${high} دينار`,
     historyLabel: (from, to, low, high) => `سعر السوق من ${from} إلى ${to}، بين ${low} و ${high} دينار`,
     shareMarket: (mid, gap) => `متوسط السوق: ${mid}${gap ? ` · ${gap} عن السعر الرسمي` : ""}`,
@@ -163,7 +167,7 @@ const STR = {
     historySpan: (days) => `over ${days} days`,
     historyError: "Couldn't load the price history.",
     goldHistoryTitle: "21K price history",
-    goldHistoryNote: "Per mithqal, at each day's market dollar rate.",
+    goldHistoryNotes: { market: "Per mithqal, at each day's market dollar rate.", baghdad: "Per mithqal, at today's Baghdad dollar sell rate." },
     goldHistoryLabel: (from, to, low, high) => `21K gold per mithqal from ${from} to ${to}, between ${low} and ${high} dinars`,
     historyLabel: (from, to, low, high) => `Market price from ${from} to ${to}, between ${low} and ${high} dinars`,
     shareMarket: (mid, gap) => `Market average: ${mid}${gap ? ` · ${gap} vs the official rate` : ""}`,
@@ -432,6 +436,7 @@ const els = {
   legend: $("legend"),
   footnote: $("footnote"),
   goldSource: $("goldSource"),
+  marketSource: $("marketSource"),
   toast: $("toast"),
   legalBtn: $("legalBtn"),
   legalSheet: $("legalSheet"),
@@ -451,12 +456,12 @@ const historyBlock = (kind, titleKey) => `
     <div class="history-foot">
       <span class="history-change" data-role="hchange"></span>
     </div>${kind === "gold" ? `
-    <p class="history-note" data-i18n="goldHistoryNote"></p>` : ""}
+    <p class="history-note" data-role="hnote"></p>` : ""}
   </div>`;
 
 function buildCards() {
   // The market average leads: one Iraq-wide price is what most people look for first.
-  els.usdPanel.innerHTML = `
+  els.usdPanel.innerHTML = (SHOW_MARKET ? `
     <section class="card market-card" id="marketCard" style="--i:1">
       <div class="city-head">
         <h2 class="city-name" data-i18n="marketTitle"></h2>
@@ -487,8 +492,8 @@ function buildCards() {
       </div>
       ${historyBlock("market", "historyTitle")}
       <div class="market-updated" data-role="updated"></div>
-    </section>` + CITIES.map((c, i) => `
-    <section class="card city" data-city="${c.key}" style="--i:${i + 2}">
+    </section>` : "") + CITIES.map((c, i) => `
+    <section class="card city" data-city="${c.key}" style="--i:${i + (SHOW_MARKET ? 2 : 1)}">
       <div class="city-head">
         <h2 class="city-name" data-role="name"></h2>
         <span class="spread"><span data-i18n="spread"></span> <strong class="num" data-role="spread"></strong> <span data-i18n="iqd"></span></span>
@@ -506,7 +511,7 @@ function buildCards() {
 
   const marketCard = els.usdPanel.querySelector("#marketCard");
   const mq = (r) => marketCard.querySelector(`[data-role="${r}"]`);
-  els.market = {
+  els.market = marketCard && {
     card: marketCard,
     main: marketCard.querySelector(".market-main"),
     ...Object.fromEntries(["mid", "per100", "pre", "post", "change", "sell", "buy", "spread", "spreadPct", "gap", "gapPct", "updated"].map((r) => [r, mq(r)])),
@@ -539,15 +544,14 @@ function buildCards() {
   }));
 
   $("goldCard").insertAdjacentHTML("beforeend", historyBlock("gold", "goldHistoryTitle"));
-  els.charts = Object.fromEntries(["market", "gold"].map((kind) => {
-    const block = document.querySelector(`[data-history="${kind}"]`);
-    return [kind, {
-      block,
-      tfButtons: [...block.querySelectorAll(".history-tfs button")],
-      hchart: block.querySelector('[data-role="hchart"]'),
-      hchange: block.querySelector('[data-role="hchange"]'),
-    }];
-  }));
+  els.marketSource.hidden = !marketCard;
+  els.charts = Object.fromEntries([...document.querySelectorAll("[data-history]")].map((block) => [block.dataset.history, {
+    block,
+    tfButtons: [...block.querySelectorAll(".history-tfs button")],
+    hchart: block.querySelector('[data-role="hchart"]'),
+    hchange: block.querySelector('[data-role="hchange"]'),
+    hnote: block.querySelector('[data-role="hnote"]'),
+  }]));
 }
 
 /* ---------- Rendering ---------- */
@@ -669,6 +673,7 @@ function renderGold({ animate = false } = {}) {
 
 // Which panel, footer notes and share state go with the current tab.
 function renderMarket({ animate = false } = {}) {
+  if (!els.market) return; // switched off (SHOW_MARKET)
   const s = t();
   const m = state.market;
   const r = els.market;
@@ -718,6 +723,7 @@ function renderMarket({ animate = false } = {}) {
 
 // The source's own timestamp, so "updated" means the market price, not our fetch.
 function renderMarketUpdated() {
+  if (!els.market) return;
   const at = Date.parse(state.market?.updatedAt || "");
   els.market.updated.textContent = Number.isFinite(at) ? `🕐 ${t().marketUpdated} ${relativeTime(at)}` : "";
 }
@@ -727,6 +733,7 @@ function renderMarketUpdated() {
 const historyLoading = {};
 
 async function loadHistory(tf = state.historyTf, { force = false } = {}) {
+  if (!els.charts.market) return;
   const entry = state.history[tf];
   if ((!force && entry && Date.now() - entry.at < HISTORY_MAX_AGE_MS) || historyLoading[tf]) return;
   historyLoading[tf] = true;
@@ -754,7 +761,7 @@ async function loadGoldHistory() {
   try {
     const json = await getJSON(GOLD_HISTORY_API_URL);
     if (!(json.points?.length >= 2)) throw new Error("not enough history");
-    state.goldHistory = { points: json.points, at: Date.now() };
+    state.goldHistory = { points: json.points, rate: json.rate, at: Date.now() };
     state.goldHistoryFailed = false;
     writeJSON(GOLD_HISTORY_CACHE_KEY, state.goldHistory);
   } catch (err) {
@@ -809,6 +816,7 @@ function renderChart(kind) {
     b.textContent = s.historyRanges[b.dataset.tf];
     b.setAttribute("aria-checked", String(b.dataset.tf === tf));
   });
+  if (r.hnote) r.hnote.textContent = s.goldHistoryNotes[state.goldHistory?.rate] ?? "";
 
   if (!pts) {
     r.hchange.textContent = historyFailed(kind) ? s.historyError : "";
@@ -1032,7 +1040,7 @@ async function load({ manual = false } = {}) {
   // The gold history has its own source, so it doesn't wait for the prices below.
   loadGoldHistory();
   // The sources load independently: one failing doesn't blank the others.
-  const [usd, gold, market] = await Promise.allSettled([getJSON(API_URL), getJSON(GOLD_API_URL), getJSON(MARKET_API_URL)]);
+  const [usd, gold, market] = await Promise.allSettled([getJSON(API_URL), getJSON(GOLD_API_URL), SHOW_MARKET ? getJSON(MARKET_API_URL) : null]);
   if (manual) await sleep(600);
   const previous = state.data;
   const hadGold = Boolean(state.gold);
@@ -1057,13 +1065,15 @@ async function load({ manual = false } = {}) {
     state.goldFailed = true;
   }
 
-  if (market.status === "fulfilled" && Number(market.value.mid) > 0) {
-    state.market = market.value;
-    state.marketFailed = false;
-    writeJSON(MARKET_CACHE_KEY, { market: state.market, t: Date.now() });
-  } else {
-    console.error("Failed to load market average:", market.reason || "unexpected response");
-    state.marketFailed = true;
+  if (SHOW_MARKET) {
+    if (market.status === "fulfilled" && Number(market.value.mid) > 0) {
+      state.market = market.value;
+      state.marketFailed = false;
+      writeJSON(MARKET_CACHE_KEY, { market: state.market, t: Date.now() });
+    } else {
+      console.error("Failed to load market average:", market.reason || "unexpected response");
+      state.marketFailed = true;
+    }
   }
 
   if (!state.failed || !state.goldFailed) state.offline = false;
@@ -1247,7 +1257,7 @@ function contentRows(tab) {
   }
   if (!els.errorView.hidden) return [[els.errorView]];
   const rows = [];
-  if (!els.market.card.hidden) {
+  if (els.market && !els.market.card.hidden) {
     rows.push(
       qAll("#marketCard .city-head"),
       qAll("#marketCard .market-main"),
@@ -1483,7 +1493,7 @@ function init() {
   const cachedGoldHistory = readJSON(GOLD_HISTORY_CACHE_KEY);
   if (cachedGoldHistory?.points?.length >= 2 && Date.now() - cachedGoldHistory.at < CACHE_MAX_AGE_MS) state.goldHistory = cachedGoldHistory;
   const cachedMarket = readJSON(MARKET_CACHE_KEY);
-  if (cachedMarket?.market && Date.now() - cachedMarket.t < CACHE_MAX_AGE_MS) state.market = cachedMarket.market;
+  if (SHOW_MARKET && cachedMarket?.market && Date.now() - cachedMarket.t < CACHE_MAX_AGE_MS) state.market = cachedMarket.market;
   const cachedGold = readJSON(GOLD_CACHE_KEY);
   if (cachedGold?.gold && Date.now() - cachedGold.t < CACHE_MAX_AGE_MS) {
     state.gold = cachedGold.gold;
