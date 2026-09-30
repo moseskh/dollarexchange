@@ -5,7 +5,7 @@ A Telegram Mini App that shows the USD → IQD borsa rates (sell / buy) for Bagh
 **Live:** https://dollarexchange.mosakh.workers.dev. Every push to `main` deploys automatically.
 
 - **Two tabs:** Dollar and Gold, with the last one used remembered.
-- **Iraq market average:** *switched off for now (September 2026) because usdiqd.com was sending wrong prices. `SHOW_MARKET` in `public/app.js` brings the card back, and `MARKET_ENABLED` in `src/rates.js` brings back the gold chart's per-day conversion.* A second source, [usdiqd.com](https://usdiqd.com), shown first, above the city cards. It shows the market middle price and its change, buy/sell and spread, and the gap from the official rate. It updates every few minutes and shows when the source last updated. It includes a price history chart of the middle price (14 days, 60 days or 10 weeks), with a touch readout, and the change over the range. usdiqd.com's own site shows only the middle price. Its `buy` is the higher number, so the Worker maps the sides by value: the higher price is بيع (sell), as on the city cards.
+- **Iraq market average:** *switched off from the dashboard since 30 September 2026, because usdiqd.com was sending wrong prices.* A second source, [usdiqd.com](https://usdiqd.com), shown first, above the city cards. It shows the market middle price and its change, buy/sell and spread, and the gap from the official rate. It updates every few minutes and shows when the source last updated. It includes a price history chart of the middle price (14 days, 60 days or 10 weeks), with a touch readout, and the change over the range. usdiqd.com's own site shows only the middle price. Its `buy` is the higher number, so the Worker maps the sides by value: the higher price is بيع (sell), as on the city cards.
 - **One card per city:** sell and buy for Baghdad, Basra and Erbil, each with the change since the previous price, the price of $100, and the buy/sell spread.
 - **Gold:** 24, 21 and 18 karat per mithqal (5 g), in dinars and dollars. Calculated from the world gold price ([gold-api.com](https://gold-api.com)) and converted at Baghdad's dollar sell rate, so gold shops may charge more. Below the prices, a price history chart of 21 karat per mithqal in dinars (14 days, 60 days or 10 weeks, the same range as the dollar chart). Each day is converted at that day's Iraq market average, because the city rates have no history. While the market average is switched off, every day converts at today's Baghdad sell rate instead.
 - **Best rate:** ★ marks the cheapest place to buy dollars (lowest sell) and the best place to sell them (highest buy).
@@ -31,8 +31,9 @@ A Telegram Mini App that shows the USD → IQD borsa rates (sell / buy) for Bagh
 | `src/texts.js` | Everything the bot says (Arabic and English), its profile and command menus |
 | `src/telegram.js` | Small Bot API client |
 | `src/analytics.js` | Usage events (app, bot, cron) and the dashboard's numbers |
-| `src/dashboard.html` | The `/admin` analytics dashboard |
-| `migrations/` | Database schema (Cloudflare D1): subscriptions, alerts, analytics events |
+| `src/features.js` | The dashboard's on/off switches: the list, and reading and saving them |
+| `src/dashboard.html` | The `/admin` dashboard: switches and analytics |
+| `migrations/` | Database schema (Cloudflare D1): subscriptions, alerts, analytics events, stored gold history, switches |
 | `wrangler.jsonc` | Worker config: static files, database, cron trigger |
 
 `/api/rates` proxies `https://iraqborsa.com/borsa-api/summary.php`. The page can't call that API directly because it sends no CORS headers, so browsers block the request. The Worker caches the upstream response for 30 seconds, so the source isn't hit on every app open.
@@ -112,9 +113,27 @@ Subscriptions, alerts, analytics events and the stored gold price history live i
 npx wrangler d1 migrations apply iraq-exchange --remote
 ```
 
-## Analytics dashboard
+## Dashboard
 
 https://dollarexchange.mosakh.workers.dev/admin: any username, and the `DASHBOARD_PASSWORD` secret as the password.
+
+### Switches
+
+The top of the dashboard turns parts of the app and bot on or off, with no deploy:
+
+| Switch | Off means |
+| --- | --- |
+| Iraq market average | No usdiqd.com card and nothing fetched from usdiqd.com; the gold chart converts at today's Baghdad rate. The dashboard shows usdiqd.com's price next to the Baghdad borsa's, to judge when it can come back |
+| Dollar price history chart | No chart in the market card |
+| Gold tab | Dollar rates only, without tabs |
+| Gold price history chart | No chart on the Gold tab |
+| Share button | No share button |
+| Daily summaries | The bot skips summaries that fall due; subscriptions are kept |
+| Price alerts | The bot stops checking alerts; saved alerts are kept |
+
+Switches are stored in the `settings` table; a switch without a row is on. The Worker serves the app page itself (`run_worker_first` in `wrangler.jsonc`) and writes the app's switches into it, so the app knows them as it starts: a change reaches the app the next time it's opened (within 30 seconds, the Worker's cache), and the bot on its next 5-minute run. Changes are only accepted as JSON posted from the dashboard page, since browsers also send saved Basic credentials with requests from other sites. To add a switch, add it to `FEATURES` in `src/features.js` and check it where it applies.
+
+### Analytics
 
 It shows unique users (with the change against the previous period), app opens, Telegram vs browser visitors, bot users and actions, and shares. Charts: daily activity, platforms, countries, how the app is opened (shared link, bot, chat menu, direct), tab, language and theme, bot commands and where they're used, busiest hours (Baghdad time), and daily summaries and alerts sent. Every chart has a table view.
 

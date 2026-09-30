@@ -13,11 +13,13 @@
 import { fetchGold, fetchGoldHistory, fetchMarket, fetchMarketHistory, fetchRates, refreshGoldHistory } from "./rates.js";
 import { handleUpdate, runScheduled, setupBot } from "./bot.js";
 import { dashboardStats, handleAppEvent } from "./analytics.js";
+import { getFeatures, listFeatures, setFeature } from "./features.js";
 import dashboardHtml from "./dashboard.html";
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.pathname === "/" && request.method === "GET") return appPage(request, env);
     if (url.pathname === "/api/rates") return priceRoute(fetchRates);
     if (url.pathname === "/api/gold") return priceRoute(fetchGold);
     if (url.pathname === "/api/gold/history") return priceRoute(() => fetchGoldHistory(env));
@@ -35,6 +37,30 @@ export default {
     ctx.waitUntil(refreshGoldHistory(env).catch((err) => console.error("Gold history refresh failed:", err.message)));
   },
 };
+
+// The app page, with the dashboard's switches written into it so the app knows them as it
+// starts. wrangler.jsonc routes "/" here before the static files.
+async function appPage(request, env) {
+  // A plain request (no If-None-Match), so there's always a page to rewrite.
+  const page = await env.ASSETS.fetch(new Request(new URL("/", request.url)));
+  if (!page.ok) return page;
+  let features = null;
+  try {
+    features = await getFeatures(env, "app");
+  } catch (err) {
+    console.error("Switches unavailable:", err.message);
+  }
+  const headers = new Headers(page.headers);
+  // The page now changes with the switches, so it can't be revalidated by the file's ETag.
+  headers.delete("ETag");
+  headers.delete("Content-Length");
+  headers.set("Cache-Control", "no-store");
+  return new HTMLRewriter().on("head", {
+    element(head) {
+      if (features) head.prepend(`<script>window.APP_CONFIG = ${JSON.stringify({ features })};</script>`, { html: true });
+    },
+  }).transform(new Response(page.body, { status: page.status, headers }));
+}
 
 async function priceRoute(load) {
   try {
@@ -87,14 +113,35 @@ async function admin(request, env, url) {
     });
   }
   const privateHeaders = { "Cache-Control": "no-store", "X-Robots-Tag": "noindex", "X-Frame-Options": "DENY" };
+  const privateJson = (body, status = 200) =>
+    new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json; charset=utf-8", ...privateHeaders } });
   if (url.pathname === "/admin/api/stats") {
-    const stats = await dashboardStats(env, url.searchParams.get("range"));
-    return new Response(JSON.stringify(stats), { headers: { "Content-Type": "application/json; charset=utf-8", ...privateHeaders } });
+    return privateJson(await dashboardStats(env, url.searchParams.get("range")));
+  }
+  if (url.pathname === "/admin/api/settings") {
+    if (request.method !== "POST") return privateJson({ features: await listFeatures(env) });
+    // Browsers send saved Basic credentials with cross-site requests too, so only accept
+    // JSON posted from the dashboard itself.
+    if (!fromDashboard(request, url)) return privateJson({ error: "Forbidden" }, 403);
+    const body = await request.json().catch(() => null);
+    try {
+      return privateJson({ features: await setFeature(env, body?.key, body?.enabled) });
+    } catch (err) {
+      return privateJson({ error: err.message }, err instanceof RangeError ? 400 : 500);
+    }
   }
   if (url.pathname === "/admin" || url.pathname === "/admin/") {
     return new Response(dashboardHtml, { headers: { "Content-Type": "text/html; charset=utf-8", ...privateHeaders } });
   }
   return new Response("Not found", { status: 404 });
+}
+
+function fromDashboard(request, url) {
+  const origin = request.headers.get("Origin");
+  const site = request.headers.get("Sec-Fetch-Site");
+  return (request.headers.get("Content-Type") || "").startsWith("application/json")
+    && (!origin || origin === url.origin)
+    && (!site || site === "same-origin");
 }
 
 async function passwordMatches(request, expected) {

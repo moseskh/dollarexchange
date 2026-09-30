@@ -8,6 +8,7 @@ import { APP_LINK, BOT_PROFILE, BOT_USERNAME, COMMAND_MENUS, T, langOf } from ".
 import { CITY_KEYS, KARATS, bestCities, fetchGold, fetchRates, goldRate, goldUsd } from "./rates.js";
 import { isGoneError, telegram } from "./telegram.js";
 import { pruneEvents, recordEvent } from "./analytics.js";
+import { getFeatures } from "./features.js";
 
 const track = (ctx, fields) => recordEvent(ctx.env, { source: "bot", userKind: "telegram", ...fields });
 const KNOWN_COMMANDS = new Set(["start", "help", "dollar", "usd", "gold", "subscribe", "unsubscribe", "alert"]);
@@ -436,9 +437,11 @@ async function setAlert(ctx, msg, args, lang) {
 export async function runScheduled(env) {
   const ctx = { env, appUrl: env.APP_URL };
   const now = new Date();
-  const prices = await loadPrices("all");
-  const alertsSent = prices.rates ? await fireAlerts(ctx, prices, now) : 0;
-  const summariesSent = prices.rates || prices.gold ? await sendSummaries(ctx, prices, now) : 0;
+  // Either can be paused from the dashboard's switches.
+  const features = await getFeatures(env, "bot");
+  const prices = features.alerts || features.summaries ? await loadPrices("all") : {};
+  const alertsSent = features.alerts && prices.rates ? await fireAlerts(ctx, prices, now) : 0;
+  const summariesSent = features.summaries && (prices.rates || prices.gold) ? await sendSummaries(ctx, prices, now) : 0;
   if (alertsSent) await recordEvent(env, { source: "cron", event: "alert_sent", value: alertsSent });
   if (summariesSent) await recordEvent(env, { source: "cron", event: "summary_sent", value: summariesSent });
   // Once an hour, drop analytics older than the retention window.

@@ -1,5 +1,7 @@
 // Upstream prices, shared by the app's API routes and the bot.
 
+import { getFeatures } from "./features.js";
+
 const RATES_UPSTREAM = "https://iraqborsa.com/borsa-api/summary.php";
 // Free, keyless gold spot price (USD per troy ounce). Its terms ask for no more than a
 // request every few seconds, so the edge cache below keeps us to about one a minute.
@@ -16,10 +18,6 @@ const GOLD_HISTORY_KARAT = 21; // the karat most bought in Iraq
 // Iraq-wide parallel-market average and its gap from the official rate, updated every few minutes.
 // Its responses ask for 60s caching (Cache-Control: max-age=60), which we match.
 const MARKET_UPSTREAM = "https://usdiqd.com/api/rates";
-// usdiqd.com is sending wrong prices (September 2026), so the gold chart doesn't use it for
-// now: every day converts at today's Baghdad sell rate instead. The app hides the market
-// card with the matching switch (SHOW_MARKET in public/app.js). Set to true once it's fixed.
-const MARKET_ENABLED = false;
 // Price history for the same market. Ranges: 12h (14 days, every 12 hours), 1d (60 days,
 // daily), 1w (weekly). Its responses ask for 5-minute caching.
 const MARKET_HISTORY_UPSTREAM = "https://usdiqd.com/api/history";
@@ -161,19 +159,21 @@ async function fetchGoldHistoryUpstream(apiKey, now) {
 
 // The stored gold history as the app charts it: 21 karat per mithqal in dinars. The city
 // rates have no history, so each day converts at that day's Iraq market average (daily
-// points cover 60 days, weekly ones reach further back). While MARKET_ENABLED is off, every
-// day converts at today's Baghdad sell rate, as the gold card does. `rate` says which.
+// points cover 60 days, weekly ones reach further back). While the dashboard's market switch
+// is off, every day converts at today's Baghdad sell rate, as the gold card does. `rate`
+// says which.
 export async function fetchGoldHistory(env) {
   const row = await env.DB.prepare("SELECT value, fetched_at FROM cache WHERE key = ?1").bind(GOLD_HISTORY_CACHE_KEY).first();
   if (!row?.value) throw new Error("gold history not loaded yet");
-  const rateAt = MARKET_ENABLED ? await marketRateByDay() : await baghdadRate();
+  const useMarket = (await getFeatures(env, "app")).market;
+  const rateAt = useMarket ? await marketRateByDay() : await baghdadRate();
   const points = [];
   for (const p of JSON.parse(row.value)) {
     const rate = rateAt(p.t);
     if (rate) points.push({ t: p.t, mid: Math.round(goldUsd(p.oz, GOLD_HISTORY_KARAT) * rate) });
   }
   if (points.length < 2) throw new Error("not enough gold history");
-  return { karat: GOLD_HISTORY_KARAT, rate: MARKET_ENABLED ? "market" : "baghdad", fetchedAt: row.fetched_at, points };
+  return { karat: GOLD_HISTORY_KARAT, rate: useMarket ? "market" : "baghdad", fetchedAt: row.fetched_at, points };
 }
 
 // IQD per dollar at a given time: the nearest market average within 8 days, or null.

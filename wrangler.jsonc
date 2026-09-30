@@ -3,9 +3,11 @@
   "main": "src/worker.js",
   "compatibility_date": "2026-09-01",
   // Files in ./public are served as-is; anything else (the APIs and the bot webhook) reaches the worker.
+  // The app page itself goes through the worker first, which adds the dashboard's switches.
   "assets": {
     "directory": "./public",
-    "binding": "ASSETS"
+    "binding": "ASSETS",
+    "run_worker_first": ["/"]
   },
   "vars": {
     // Used for "Open the app" buttons in messages the bot sends on a schedule.

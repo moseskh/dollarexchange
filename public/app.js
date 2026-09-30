@@ -11,10 +11,11 @@ const CACHE_MAX_AGE_MS = 24 * 60 * 60_000;
 const CACHE_KEY = "borsa:last";
 const GOLD_CACHE_KEY = "borsa:gold";
 const MARKET_CACHE_KEY = "borsa:market";
-// usdiqd.com is sending wrong prices (September 2026), so its market card is switched off
-// and nothing is fetched from it. Set to true to bring the card back; MARKET_ENABLED in
-// src/rates.js is the matching switch for the gold chart's dinar conversion.
-const SHOW_MARKET = false;
+// Switches from the /admin dashboard (src/features.js), written into the page by the Worker.
+// Anything missing counts as on; a chart is off whenever its card or tab is.
+const FEATURES = { market: true, marketHistory: true, gold: true, goldHistory: true, share: true, ...window.APP_CONFIG?.features };
+FEATURES.marketHistory &&= FEATURES.market;
+FEATURES.goldHistory &&= FEATURES.gold;
 const HISTORY_API_URL = "/api/market/history";
 const HISTORY_TFS = ["12h", "1d", "1w"]; // 14 days every 12h · 60 days daily · ~10 weeks weekly
 const HISTORY_MAX_AGE_MS = 5 * 60_000; // the source updates its history every few minutes at most
@@ -281,7 +282,7 @@ const prefs = readJSON(PREFS_KEY) || {};
 const state = {
   lang: prefs.lang === "ar" || prefs.lang === "en" ? prefs.lang : detectLang(),
   theme: prefs.theme === "light" || prefs.theme === "dark" ? prefs.theme : null, // null = follow Telegram/system
-  tab: prefs.tab === "gold" ? "gold" : "usd",
+  tab: prefs.tab === "gold" && FEATURES.gold ? "gold" : "usd",
   data: null, // dollar rates from iraqborsa.com
   updatedAt: 0,
   failed: false,
@@ -461,7 +462,7 @@ const historyBlock = (kind, titleKey) => `
 
 function buildCards() {
   // The market average leads: one Iraq-wide price is what most people look for first.
-  els.usdPanel.innerHTML = (SHOW_MARKET ? `
+  els.usdPanel.innerHTML = (FEATURES.market ? `
     <section class="card market-card" id="marketCard" style="--i:1">
       <div class="city-head">
         <h2 class="city-name" data-i18n="marketTitle"></h2>
@@ -490,10 +491,10 @@ function buildCards() {
           <strong class="stat-pct num" data-role="gapPct"></strong>
         </div>
       </div>
-      ${historyBlock("market", "historyTitle")}
+      ${FEATURES.marketHistory ? historyBlock("market", "historyTitle") : ""}
       <div class="market-updated" data-role="updated"></div>
     </section>` : "") + CITIES.map((c, i) => `
-    <section class="card city" data-city="${c.key}" style="--i:${i + (SHOW_MARKET ? 2 : 1)}">
+    <section class="card city" data-city="${c.key}" style="--i:${i + (FEATURES.market ? 2 : 1)}">
       <div class="city-head">
         <h2 class="city-name" data-role="name"></h2>
         <span class="spread"><span data-i18n="spread"></span> <strong class="num" data-role="spread"></strong> <span data-i18n="iqd"></span></span>
@@ -543,7 +544,9 @@ function buildCards() {
     return [k, { row, label: q("label"), iqd: q("iqd"), usd: q("usd") }];
   }));
 
-  $("goldCard").insertAdjacentHTML("beforeend", historyBlock("gold", "goldHistoryTitle"));
+  if (FEATURES.goldHistory) $("goldCard").insertAdjacentHTML("beforeend", historyBlock("gold", "goldHistoryTitle"));
+  els.tabs.hidden = !FEATURES.gold;
+  els.shareBtn.hidden = !FEATURES.share;
   els.marketSource.hidden = !marketCard;
   els.charts = Object.fromEntries([...document.querySelectorAll("[data-history]")].map((block) => [block.dataset.history, {
     block,
@@ -673,7 +676,7 @@ function renderGold({ animate = false } = {}) {
 
 // Which panel, footer notes and share state go with the current tab.
 function renderMarket({ animate = false } = {}) {
-  if (!els.market) return; // switched off (SHOW_MARKET)
+  if (!els.market) return; // switched off from the dashboard
   const s = t();
   const m = state.market;
   const r = els.market;
@@ -755,6 +758,7 @@ async function loadHistory(tf = state.historyTf, { force = false } = {}) {
 let goldHistoryLoading = false;
 
 async function loadGoldHistory() {
+  if (!els.charts.gold) return;
   const entry = state.goldHistory;
   if ((entry && Date.now() - entry.at < GOLD_HISTORY_MAX_AGE_MS) || goldHistoryLoading) return;
   goldHistoryLoading = true;
@@ -808,8 +812,9 @@ function renderHistory() {
 }
 
 function renderChart(kind) {
-  const s = t();
   const r = els.charts[kind];
+  if (!r) return; // switched off from the dashboard
+  const s = t();
   const tf = state.historyTf;
   const pts = historyPoints(kind);
   r.tfButtons.forEach((b) => {
@@ -1040,7 +1045,7 @@ async function load({ manual = false } = {}) {
   // The gold history has its own source, so it doesn't wait for the prices below.
   loadGoldHistory();
   // The sources load independently: one failing doesn't blank the others.
-  const [usd, gold, market] = await Promise.allSettled([getJSON(API_URL), getJSON(GOLD_API_URL), SHOW_MARKET ? getJSON(MARKET_API_URL) : null]);
+  const [usd, gold, market] = await Promise.allSettled([getJSON(API_URL), FEATURES.gold ? getJSON(GOLD_API_URL) : null, FEATURES.market ? getJSON(MARKET_API_URL) : null]);
   if (manual) await sleep(600);
   const previous = state.data;
   const hadGold = Boolean(state.gold);
@@ -1055,17 +1060,19 @@ async function load({ manual = false } = {}) {
     state.failed = true;
   }
 
-  if (gold.status === "fulfilled" && Number(gold.value.price) > 0) {
-    state.gold = gold.value;
-    state.goldAt = Date.now();
-    state.goldFailed = false;
-    writeJSON(GOLD_CACHE_KEY, { gold: state.gold, t: state.goldAt });
-  } else {
-    console.error("Failed to load gold:", gold.reason || "unexpected response");
-    state.goldFailed = true;
+  if (FEATURES.gold) {
+    if (gold.status === "fulfilled" && Number(gold.value.price) > 0) {
+      state.gold = gold.value;
+      state.goldAt = Date.now();
+      state.goldFailed = false;
+      writeJSON(GOLD_CACHE_KEY, { gold: state.gold, t: state.goldAt });
+    } else {
+      console.error("Failed to load gold:", gold.reason || "unexpected response");
+      state.goldFailed = true;
+    }
   }
 
-  if (SHOW_MARKET) {
+  if (FEATURES.market) {
     if (market.status === "fulfilled" && Number(market.value.mid) > 0) {
       state.market = market.value;
       state.marketFailed = false;
@@ -1076,7 +1083,7 @@ async function load({ manual = false } = {}) {
     }
   }
 
-  if (!state.failed || !state.goldFailed) state.offline = false;
+  if (!state.failed || (FEATURES.gold && !state.goldFailed)) state.offline = false;
   state.loading = false;
   els.refreshBtn.classList.remove("loading");
   onFreshData(previous, hadGold);
@@ -1493,7 +1500,7 @@ function init() {
   const cachedGoldHistory = readJSON(GOLD_HISTORY_CACHE_KEY);
   if (cachedGoldHistory?.points?.length >= 2 && Date.now() - cachedGoldHistory.at < CACHE_MAX_AGE_MS) state.goldHistory = cachedGoldHistory;
   const cachedMarket = readJSON(MARKET_CACHE_KEY);
-  if (SHOW_MARKET && cachedMarket?.market && Date.now() - cachedMarket.t < CACHE_MAX_AGE_MS) state.market = cachedMarket.market;
+  if (FEATURES.market && cachedMarket?.market && Date.now() - cachedMarket.t < CACHE_MAX_AGE_MS) state.market = cachedMarket.market;
   const cachedGold = readJSON(GOLD_CACHE_KEY);
   if (cachedGold?.gold && Date.now() - cachedGold.t < CACHE_MAX_AGE_MS) {
     state.gold = cachedGold.gold;
