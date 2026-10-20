@@ -29,6 +29,11 @@ export const T = {
     iqd: "د.ع",
     bestNote: "⭐ أفضل سعر بين المدن",
     goldNote: (spot, rate) => `السعر العالمي $${spot} للأونصة، محوّلاً بسعر بيع الدولار في بغداد (${rate}).`,
+    goldNoteMarket: (spot, rate) => `السعر العالمي $${spot} للأونصة، محوّلاً بمتوسط سعر الدولار في السوق (${rate}).`,
+    marketTitle: "متوسط السوق في العراق",
+    marketAverage: (mid) => `المتوسط <b>${mid}</b>`,
+    marketNote: "من usdiqd.com، لأن أسعار المدن غير متاحة حالياً.",
+    alertsPaused: "التنبيهات تتبع سعر البيع في بغداد، وهو غير متاح حالياً. حاول لاحقاً.",
     updated: (time) => `🕐 آخر تحديث ${time}`,
     ratesError: "تعذّر جلب الأسعار حالياً، حاول بعد قليل.",
 
@@ -58,6 +63,7 @@ export const T = {
 
     inlineUsdTitle: "💵 أسعار الدولار",
     inlineUsdDesc: (sell, buy) => `بغداد: بيع ${sell} · شراء ${buy}`,
+    inlineMarketDesc: (mid) => `متوسط السوق: ${mid}`,
     inlineGoldTitle: "🪙 أسعار الذهب",
     inlineGoldDesc: (iqd) => `عيار 21: ${iqd} د.ع للمثقال`,
   },
@@ -82,6 +88,11 @@ export const T = {
     iqd: "IQD",
     bestNote: "⭐ Best rate across cities",
     goldNote: (spot, rate) => `World price $${spot} per ounce, converted at Baghdad's dollar sell rate (${rate}).`,
+    goldNoteMarket: (spot, rate) => `World price $${spot} per ounce, converted at the Iraq market average dollar rate (${rate}).`,
+    marketTitle: "Iraq market average",
+    marketAverage: (mid) => `Average <b>${mid}</b>`,
+    marketNote: "From usdiqd.com, as city prices aren't available right now.",
+    alertsPaused: "Alerts follow Baghdad's sell rate, which isn't available right now. Try again later.",
     updated: (time) => `🕐 Updated ${time}`,
     ratesError: "Couldn't load the rates right now, try again shortly.",
 
@@ -111,6 +122,7 @@ export const T = {
 
     inlineUsdTitle: "💵 Dollar rates",
     inlineUsdDesc: (sell, buy) => `Baghdad: Sell ${sell} · Buy ${buy}`,
+    inlineMarketDesc: (mid) => `Market average: ${mid}`,
     inlineGoldTitle: "🪙 Gold prices",
     inlineGoldDesc: (iqd) => `21 karat: ${iqd} IQD per mithqal`,
   },

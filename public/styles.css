@@ -209,6 +209,9 @@ svg { display: block; flex-shrink: 0; }
   padding: var(--sp-4);
   box-shadow: var(--shadow-card);
 }
+/* In place of the city cards when the borsa is down but the market average is up. */
+.city-notice { margin: 0; padding: var(--sp-3) var(--sp-4); color: var(--c-hint); font-size: var(--fs-caption); text-align: center; }
+.city-notice .link-btn { font-size: inherit; }
 
 /* Icon button (circular) */
 .icon-btn {

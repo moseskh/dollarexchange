@@ -29,27 +29,42 @@ const MITHQAL_GRAMS = 5;
 const TROY_OUNCE_GRAMS = 31.1034768;
 
 const UPSTREAM_HEADERS = { Accept: "application/json", "User-Agent": "BorsaMiniApp/1.0" };
+// Every upstream gets 6 seconds. A source that hangs (iraqborsa.com took 20 seconds to fail
+// when its domain lapsed) must fail fast instead of stalling the app and the bot.
+const UPSTREAM_TIMEOUT_MS = 6_000;
+
+async function upstream(name, url, { cacheTtl, headers, errorBody = false } = {}) {
+  let res;
+  try {
+    res = await fetch(url, {
+      headers: { ...UPSTREAM_HEADERS, ...headers },
+      ...(cacheTtl ? { cf: { cacheTtl, cacheEverything: true } } : {}),
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+    });
+  } catch (err) {
+    throw new Error(err.name === "TimeoutError"
+      ? `${name} didn't answer within ${UPSTREAM_TIMEOUT_MS / 1000} seconds`
+      : `${name} is unreachable (${err.message})`);
+  }
+  if (!res.ok) {
+    const detail = errorBody ? `: ${(await res.text()).slice(0, 200)}` : "";
+    throw new Error(`${name} returned ${res.status}${detail}`);
+  }
+  return res;
+}
 
 export async function fetchRates() {
-  const res = await fetch(RATES_UPSTREAM, {
-    headers: UPSTREAM_HEADERS,
-    // Cache at the edge for 30s so many users opening the app don't hammer the source.
-    cf: { cacheTtl: 30, cacheEverything: true },
-  });
-  if (!res.ok) throw new Error(`upstream returned ${res.status}`);
-  const data = await res.json();
-  if (!CITY_KEYS.every((k) => data[k] && data[k].sell && data[k].buy)) {
-    throw new Error("unexpected upstream response");
+  // Cached at the edge for 30s so many users opening the app don't hammer the source.
+  const res = await upstream("iraqborsa.com", RATES_UPSTREAM, { cacheTtl: 30 });
+  const data = await res.json().catch(() => null);
+  if (!CITY_KEYS.every((k) => data?.[k]?.sell && data[k].buy)) {
+    throw new Error("iraqborsa.com sent an unexpected response");
   }
   return data;
 }
 
 export async function fetchGold() {
-  const res = await fetch(GOLD_UPSTREAM, {
-    headers: UPSTREAM_HEADERS,
-    cf: { cacheTtl: 60, cacheEverything: true },
-  });
-  if (!res.ok) throw new Error(`gold upstream returned ${res.status}`);
+  const res = await upstream("gold-api.com", GOLD_UPSTREAM, { cacheTtl: 60 });
   const data = await res.json();
   const price = Number(data.price);
   if (!Number.isFinite(price) || price <= 0) throw new Error("unexpected gold response");
@@ -61,11 +76,7 @@ export async function fetchGold() {
 // the two sides are mapped by value: the higher price is our sell (بيع), the lower our
 // buy (شراء), matching the city cards.
 export async function fetchMarket() {
-  const res = await fetch(MARKET_UPSTREAM, {
-    headers: UPSTREAM_HEADERS,
-    cf: { cacheTtl: 60, cacheEverything: true },
-  });
-  if (!res.ok) throw new Error(`market upstream returned ${res.status}`);
+  const res = await upstream("usdiqd.com", MARKET_UPSTREAM, { cacheTtl: 60 });
   const data = await res.json();
   const num = (v) => (v == null || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
   const m = data.market || {};
@@ -90,11 +101,7 @@ export async function fetchMarket() {
 // Trimmed to [{ t: ms, mid }] in time order, since the chart plots the middle price.
 export async function fetchMarketHistory(tf) {
   if (!HISTORY_RANGES.has(tf)) throw new RangeError(`unsupported range: ${tf}`);
-  const res = await fetch(`${MARKET_HISTORY_UPSTREAM}?tf=${tf}`, {
-    headers: UPSTREAM_HEADERS,
-    cf: { cacheTtl: 300, cacheEverything: true },
-  });
-  if (!res.ok) throw new Error(`history upstream returned ${res.status}`);
+  const res = await upstream("usdiqd.com", `${MARKET_HISTORY_UPSTREAM}?tf=${tf}`, { cacheTtl: 300 });
   const data = await res.json();
   const points = (Array.isArray(data.points) ? data.points : [])
     .map((p) => ({ t: Date.parse(p.t), mid: Number(p.mid) }))
@@ -139,9 +146,8 @@ async function fetchGoldHistoryUpstream(apiKey, now) {
     aggregation: "avg",
     orderBy: "asc",
   });
-  const res = await fetch(`${GOLD_HISTORY_UPSTREAM}?${params}`, { headers: { ...UPSTREAM_HEADERS, "x-api-key": apiKey } });
+  const res = await upstream("gold-api.com", `${GOLD_HISTORY_UPSTREAM}?${params}`, { headers: { "x-api-key": apiKey }, errorBody: true });
   const body = await res.text();
-  if (!res.ok) throw new Error(`gold history upstream returned ${res.status}: ${body.slice(0, 200)}`);
   let rows;
   try {
     rows = JSON.parse(body);
@@ -159,21 +165,35 @@ async function fetchGoldHistoryUpstream(apiKey, now) {
 
 // The stored gold history as the app charts it: 21 karat per mithqal in dinars. The city
 // rates have no history, so each day converts at that day's Iraq market average (daily
-// points cover 60 days, weekly ones reach further back). While the dashboard's market switch
-// is off, every day converts at today's Baghdad sell rate, as the gold card does. `rate`
-// says which.
+// points cover 60 days, weekly ones reach further back). If the market average is switched
+// off or down, every day converts at today's Baghdad sell rate, as the gold card does.
+// `rate` says which.
 export async function fetchGoldHistory(env) {
   const row = await env.DB.prepare("SELECT value, fetched_at FROM cache WHERE key = ?1").bind(GOLD_HISTORY_CACHE_KEY).first();
   if (!row?.value) throw new Error("gold history not loaded yet");
-  const useMarket = (await getFeatures(env, "app")).market;
-  const rateAt = useMarket ? await marketRateByDay() : await baghdadRate();
+  const features = await getFeatures(env, "source");
+  let rateAt = null;
+  let source = null;
+  if (features.market) {
+    try {
+      rateAt = await marketRateByDay();
+      source = "market";
+    } catch (err) {
+      if (!features.borsa) throw err;
+    }
+  }
+  if (!rateAt && features.borsa) {
+    rateAt = await baghdadRate();
+    source = "baghdad";
+  }
+  if (!rateAt) throw new Error("both dollar sources are switched off");
   const points = [];
   for (const p of JSON.parse(row.value)) {
     const rate = rateAt(p.t);
     if (rate) points.push({ t: p.t, mid: Math.round(goldUsd(p.oz, GOLD_HISTORY_KARAT) * rate) });
   }
   if (points.length < 2) throw new Error("not enough gold history");
-  return { karat: GOLD_HISTORY_KARAT, rate: useMarket ? "market" : "baghdad", fetchedAt: row.fetched_at, points };
+  return { karat: GOLD_HISTORY_KARAT, rate: source, fetchedAt: row.fetched_at, points };
 }
 
 // IQD per dollar at a given time: the nearest market average within 8 days, or null.

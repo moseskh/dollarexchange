@@ -4,8 +4,12 @@
 
 export const FEATURES = [
   {
-    key: "market", area: "app", label: "Iraq market average",
-    help: "The usdiqd.com card on the Dollar tab. While it's off, nothing is fetched from usdiqd.com and the gold chart converts at today's Baghdad rate.",
+    key: "borsa", area: "source", label: "Iraq borsa (city prices)",
+    help: "Baghdad, Basra and Erbil from iraqborsa.com. While it's off, nothing is fetched from iraqborsa.com: the app and bot use the Iraq market average as the dollar rate, and price alerts wait until it's back.",
+  },
+  {
+    key: "market", area: "source", label: "Iraq market average",
+    help: "The usdiqd.com card on the Dollar tab, and the dollar rate the app and bot use when the borsa is off or down. While it's off, nothing is fetched from usdiqd.com.",
   },
   { key: "marketHistory", area: "app", parent: "market", label: "Dollar price history chart", help: "The chart inside the market card." },
   { key: "gold", area: "app", label: "Gold tab", help: "While it's off, the app shows only the dollar rates, without tabs." },
@@ -39,10 +43,11 @@ async function readRows(env, { fresh = false } = {}) {
   }
 }
 
-// { key: boolean } for every switch in `area` ("app" or "bot"), or all of them.
-export async function getFeatures(env, area) {
+// { key: boolean } for every switch in the given areas ("source", "app", "bot"), or all.
+export async function getFeatures(env, areas) {
   const rows = await readRows(env);
-  return Object.fromEntries(FEATURES.filter((f) => !area || f.area === area).map((f) => [f.key, rows.get(f.key)?.enabled ?? true]));
+  const wanted = areas == null ? null : [areas].flat();
+  return Object.fromEntries(FEATURES.filter((f) => !wanted || wanted.includes(f.area)).map((f) => [f.key, rows.get(f.key)?.enabled ?? true]));
 }
 
 // Every switch with its label and state, for the dashboard.

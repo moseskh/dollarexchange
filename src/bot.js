@@ -5,7 +5,7 @@
 // Rates messages carry buttons that edit the message in place instead of posting new ones.
 
 import { APP_LINK, BOT_PROFILE, BOT_USERNAME, COMMAND_MENUS, T, langOf } from "./texts.js";
-import { CITY_KEYS, KARATS, bestCities, fetchGold, fetchRates, goldRate, goldUsd } from "./rates.js";
+import { CITY_KEYS, KARATS, bestCities, fetchGold, fetchMarket, fetchRates, goldRate, goldUsd } from "./rates.js";
 import { isGoneError, telegram } from "./telegram.js";
 import { pruneEvents, recordEvent } from "./analytics.js";
 import { getFeatures } from "./features.js";
@@ -50,12 +50,22 @@ const hourLabel = (hour) => `${String(hour).padStart(2, "0")}:00`;
 
 /* ---------- Messages ---------- */
 
-export async function loadPrices(view) {
-  const [rates, gold] = await Promise.all([
-    fetchRates().catch(() => null),
+// City rates come from the borsa; the Iraq market average stands in for them when the
+// borsa is switched off or down. Either source can be switched off from the dashboard.
+export async function loadPrices(env, view) {
+  const sources = await getFeatures(env, "source");
+  const [rates, gold, market] = await Promise.all([
+    sources.borsa ? fetchRates().catch(() => null) : null,
     view === "usd" ? null : fetchGold().catch(() => null),
+    sources.market ? fetchMarket().catch(() => null) : null,
   ]);
-  return { rates, gold };
+  return { rates, gold, market };
+}
+
+// Dinars per dollar for gold: Baghdad's sell rate, or the market average without the borsa.
+function dollarRate({ rates, market }) {
+  if (rates) return { rate: goldRate(rates), source: "baghdad" };
+  return market ? { rate: market.mid, source: "market" } : null;
 }
 
 function usdLines(rates, lang) {
@@ -71,32 +81,47 @@ function usdLines(rates, lang) {
   return [cities.join("\n\n"), ...(best.sell.size || best.buy.size ? ["", s.bestNote] : [])];
 }
 
-function goldLines(gold, rates, lang) {
+function marketLines(market, lang) {
   const s = T[lang];
-  const rate = rates ? goldRate(rates) : null;
+  const sides = market.sell && market.buy ? [`${s.sell} <b>${fmt.format(market.sell)}</b> · ${s.buy} <b>${fmt.format(market.buy)}</b>`] : [];
+  return [`<b>${s.marketTitle}</b>`, s.marketAverage(fmt.format(market.mid)), ...sides, "", s.marketNote];
+}
+
+// The city rates, or the market average when the borsa is off or down.
+function usdBody(prices, lang) {
+  return prices.rates ? usdLines(prices.rates, lang) : marketLines(prices.market, lang);
+}
+
+function goldLines(prices, lang) {
+  const s = T[lang];
+  const { gold } = prices;
+  const dollar = dollarRate(prices);
+  const rate = dollar?.rate;
   const karats = KARATS.map((k) => {
     const usd = goldUsd(gold.price, k);
     const iqd = rate ? fmtInt.format(Math.round(usd * rate)) : "—";
     return `${s.karat(k)}: <b>${iqd}</b> ${s.iqd} · $${fmtUsd.format(usd)}`;
   });
-  return [...karats, "", s.goldNote(fmtUsd.format(gold.price), rate ? fmt.format(rate) : "—")];
+  const note = dollar?.source === "market" ? s.goldNoteMarket : s.goldNote;
+  return [...karats, "", note(fmtUsd.format(gold.price), rate ? fmt.format(rate) : "—")];
 }
 
 // Throws when the data the view needs is missing, so callers can show the error text.
-export function renderView(view, { rates, gold }, lang, now = new Date()) {
+export function renderView(view, prices, lang, now = new Date()) {
   const s = T[lang];
+  const hasUsd = Boolean(prices.rates || prices.market);
   let lines;
   if (view === "usd") {
-    if (!rates) throw new Error("dollar rates unavailable");
-    lines = [s.usdTitle, "", ...usdLines(rates, lang)];
+    if (!hasUsd) throw new Error("dollar rates unavailable");
+    lines = [s.usdTitle, "", ...usdBody(prices, lang)];
   } else if (view === "gold") {
-    if (!gold) throw new Error("gold price unavailable");
-    lines = [s.goldTitle, "", ...goldLines(gold, rates, lang)];
+    if (!prices.gold) throw new Error("gold price unavailable");
+    lines = [s.goldTitle, "", ...goldLines(prices, lang)];
   } else {
-    if (!rates && !gold) throw new Error("prices unavailable");
+    if (!hasUsd && !prices.gold) throw new Error("prices unavailable");
     lines = [s.summaryTitle];
-    if (rates) lines.push("", s.usdTitle, "", ...usdLines(rates, lang));
-    if (gold) lines.push("", s.goldTitle, "", ...goldLines(gold, rates, lang));
+    if (hasUsd) lines.push("", s.usdTitle, "", ...usdBody(prices, lang));
+    if (prices.gold) lines.push("", s.goldTitle, "", ...goldLines(prices, lang));
   }
   lines.push("", s.updated(baghdadTime(now, lang)));
   return lines.join("\n");
@@ -151,7 +176,7 @@ const replyTo = (msg) =>
 async function sendView(ctx, msg, view, lang) {
   let text;
   try {
-    text = renderView(view, await loadPrices(view), lang);
+    text = renderView(view, await loadPrices(ctx.env, view), lang);
   } catch {
     return send(ctx, msg.chat.id, T[lang].ratesError, replyTo(msg));
   }
@@ -275,7 +300,7 @@ async function onCallback(ctx, cb) {
   try {
     await telegram(ctx.env, "editMessageText", {
       ...target,
-      text: renderView(view, await loadPrices(view), lang),
+      text: renderView(view, await loadPrices(ctx.env, view), lang),
       parse_mode: "HTML",
       link_preview_options: { is_disabled: true },
       reply_markup: viewKeyboard(view, lang, place, ctx.appUrl),
@@ -291,7 +316,7 @@ async function onInline(ctx, query) {
   const lang = langOf(query.from?.language_code);
   const s = T[lang];
   await track(ctx, { event: "inline", platform: "inline", lang, userId: query.from?.id });
-  const prices = await loadPrices("all");
+  const prices = await loadPrices(ctx.env, "all");
   const result = (view, title, description, thumb) => ({
     type: "article",
     id: `${view}-${lang}`,
@@ -310,9 +335,11 @@ async function onInline(ctx, query) {
   if (prices.rates) {
     const b = prices.rates.b;
     results.push(result("usd", s.inlineUsdTitle, s.inlineUsdDesc(fmt.format(Number(b.sell)), fmt.format(Number(b.buy))), "usd"));
+  } else if (prices.market) {
+    results.push(result("usd", s.inlineUsdTitle, s.inlineMarketDesc(fmt.format(prices.market.mid)), "usd"));
   }
   if (prices.gold) {
-    const rate = prices.rates ? goldRate(prices.rates) : null;
+    const rate = dollarRate(prices)?.rate;
     const iqd21 = rate ? fmtInt.format(Math.round(goldUsd(prices.gold.price, 21) * rate)) : "—";
     results.push(result("gold", s.inlineGoldTitle, s.inlineGoldDesc(iqd21), "gold"));
   }
@@ -407,7 +434,9 @@ async function setAlert(ctx, msg, args, lang) {
     });
   }
 
-  const rates = await fetchRates().catch(() => null);
+  // Alerts are about Baghdad's sell rate, so they need the borsa.
+  const borsaOn = (await getFeatures(ctx.env, "source")).borsa;
+  const rates = borsaOn ? await fetchRates().catch(() => null) : null;
   const now = rates ? Number(rates.b.sell) : null;
 
   if (!args.length) {
@@ -422,7 +451,7 @@ async function setAlert(ctx, msg, args, lang) {
   // Prices are often quoted per $100 (e.g. 158000); treat those as per-dollar.
   if (target >= 50_000) target /= 100;
   if (!Number.isFinite(target) || target < 500 || target > 5_000) return send(ctx, msg.chat.id, s.alertUsage);
-  if (now == null) return send(ctx, msg.chat.id, s.ratesError);
+  if (now == null) return send(ctx, msg.chat.id, borsaOn ? s.ratesError : s.alertsPaused);
   if (target === now) return send(ctx, msg.chat.id, s.alertSame(fmt.format(now)));
 
   const up = target > now;
@@ -437,11 +466,12 @@ async function setAlert(ctx, msg, args, lang) {
 export async function runScheduled(env) {
   const ctx = { env, appUrl: env.APP_URL };
   const now = new Date();
-  // Either can be paused from the dashboard's switches.
+  // Either can be paused from the dashboard's switches. Alerts are about Baghdad's sell rate,
+  // so they also wait while the borsa is off or down (prices.rates is null then).
   const features = await getFeatures(env, "bot");
-  const prices = features.alerts || features.summaries ? await loadPrices("all") : {};
+  const prices = features.alerts || features.summaries ? await loadPrices(env, "all") : {};
   const alertsSent = features.alerts && prices.rates ? await fireAlerts(ctx, prices, now) : 0;
-  const summariesSent = features.summaries && (prices.rates || prices.gold) ? await sendSummaries(ctx, prices, now) : 0;
+  const summariesSent = features.summaries && (prices.rates || prices.market || prices.gold) ? await sendSummaries(ctx, prices, now) : 0;
   if (alertsSent) await recordEvent(env, { source: "cron", event: "alert_sent", value: alertsSent });
   if (summariesSent) await recordEvent(env, { source: "cron", event: "summary_sent", value: summariesSent });
   // Once an hour, drop analytics older than the retention window.

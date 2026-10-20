@@ -5,8 +5,9 @@ A Telegram Mini App that shows the USD → IQD borsa rates (sell / buy) for Bagh
 **Live:** https://dollarexchange.mosakh.workers.dev. Every push to `main` deploys automatically.
 
 - **Two tabs:** Dollar and Gold, with the last one used remembered.
-- **Iraq market average:** *switched off from the dashboard since 30 September 2026, because usdiqd.com was sending wrong prices.* A second source, [usdiqd.com](https://usdiqd.com), shown first, above the city cards. It shows the market middle price and its change, buy/sell and spread, and the gap from the official rate. It updates every few minutes and shows when the source last updated. It includes a price history chart of the middle price (14 days, 60 days or 10 weeks), with a touch readout, and the change over the range. usdiqd.com's own site shows only the middle price. Its `buy` is the higher number, so the Worker maps the sides by value: the higher price is بيع (sell), as on the city cards.
+- **Iraq market average:** a second source, [usdiqd.com](https://usdiqd.com), shown first, above the city cards. It shows the market middle price and its change, buy/sell and spread, and the gap from the official rate. It updates every few minutes and shows when the source last updated. It includes a price history chart of the middle price (14 days, 60 days or 10 weeks), with a touch readout, and the change over the range. usdiqd.com's own site shows only the middle price. Its `buy` is the higher number, so the Worker maps the sides by value: the higher price is بيع (sell), as on the city cards.
 - **One card per city:** sell and buy for Baghdad, Basra and Erbil, each with the change since the previous price, the price of $100, and the buy/sell spread.
+- **When the borsa is off or down:** the Dollar tab shows the Iraq market average (with a short notice if the borsa is down rather than switched off), gold converts at the market average, and the bot does the same. Price alerts, which are about Baghdad's sell rate, wait until the borsa is back. iraqborsa.com's domain lapsed on 19 October 2026, which is why this exists.
 - **Gold:** 24, 21 and 18 karat per mithqal (5 g), in dinars and dollars. Calculated from the world gold price ([gold-api.com](https://gold-api.com)) and converted at Baghdad's dollar sell rate, so gold shops may charge more. Below the prices, a price history chart of 21 karat per mithqal in dinars (14 days, 60 days or 10 weeks, the same range as the dollar chart). Each day is converted at that day's Iraq market average, because the city rates have no history. While the market average is switched off, every day converts at today's Baghdad sell rate instead.
 - **Best rate:** ★ marks the cheapest place to buy dollars (lowest sell) and the best place to sell them (highest buy).
 - **Share:** sends all three cities' rates to any Telegram chat.
@@ -36,7 +37,7 @@ A Telegram Mini App that shows the USD → IQD borsa rates (sell / buy) for Bagh
 | `migrations/` | Database schema (Cloudflare D1): subscriptions, alerts, analytics events, stored gold history, switches |
 | `wrangler.jsonc` | Worker config: static files, database, cron trigger |
 
-`/api/rates` proxies `https://iraqborsa.com/borsa-api/summary.php`. The page can't call that API directly because it sends no CORS headers, so browsers block the request. The Worker caches the upstream response for 30 seconds, so the source isn't hit on every app open.
+`/api/rates` proxies `https://iraqborsa.com/borsa-api/summary.php`. The page can't call that API directly because it sends no CORS headers, so browsers block the request. The Worker caches the upstream response for 30 seconds, so the source isn't hit on every app open. Every upstream gets 6 seconds to answer, so a source that hangs fails fast instead of stalling the app and the bot; the app shows each source as soon as it arrives.
 
 `/api/gold/history` reads the gold price history from the database. gold-api.com's history endpoint needs a free API key and allows 10 requests an hour, so the 5-minute cron fetches 70 days of daily averages into the `cache` table at most once an hour, waiting 15 minutes after a failure. The route converts each day to 21 karat per mithqal in dinars. The key is the `GOLD_API_KEY` secret (type *Secret*, in the same place as the bot's secrets). The last failed attempt's error is kept in `cache.error`.
 
@@ -123,13 +124,16 @@ The top of the dashboard turns parts of the app and bot on or off, with no deplo
 
 | Switch | Off means |
 | --- | --- |
-| Iraq market average | No usdiqd.com card and nothing fetched from usdiqd.com; the gold chart converts at today's Baghdad rate. The dashboard shows usdiqd.com's price next to the Baghdad borsa's, to judge when it can come back |
+| Iraq borsa (city prices) | No city cards and nothing fetched from iraqborsa.com; the app and bot use the market average as the dollar rate, and price alerts wait |
+| Iraq market average | No usdiqd.com card and nothing fetched from usdiqd.com; the gold chart converts at today's Baghdad rate |
 | Dollar price history chart | No chart in the market card |
 | Gold tab | Dollar rates only, without tabs |
 | Gold price history chart | No chart on the Gold tab |
 | Share button | No share button |
 | Daily summaries | The bot skips summaries that fall due; subscriptions are kept |
 | Price alerts | The bot stops checking alerts; saved alerts are kept |
+
+Under each dollar source, the dashboard shows what it returns right now (both routes keep answering while a source is switched off), to judge when to turn it off or back on. With both dollar sources off, the app and bot have no dollar rate, and the dashboard says so.
 
 Switches are stored in the `settings` table; a switch without a row is on. The Worker serves the app page itself (`run_worker_first` in `wrangler.jsonc`) and writes the app's switches into it, so the app knows them as it starts: a change reaches the app the next time it's opened (within 30 seconds, the Worker's cache), and the bot on its next 5-minute run. Changes are only accepted as JSON posted from the dashboard page, since browsers also send saved Basic credentials with requests from other sites. To add a switch, add it to `FEATURES` in `src/features.js` and check it where it applies.
 

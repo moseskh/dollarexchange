@@ -46,7 +46,7 @@ async function appPage(request, env) {
   if (!page.ok) return page;
   let features = null;
   try {
-    features = await getFeatures(env, "app");
+    features = await getFeatures(env, ["source", "app"]);
   } catch (err) {
     console.error("Switches unavailable:", err.message);
   }

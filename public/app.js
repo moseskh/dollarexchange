@@ -13,7 +13,7 @@ const GOLD_CACHE_KEY = "borsa:gold";
 const MARKET_CACHE_KEY = "borsa:market";
 // Switches from the /admin dashboard (src/features.js), written into the page by the Worker.
 // Anything missing counts as on; a chart is off whenever its card or tab is.
-const FEATURES = { market: true, marketHistory: true, gold: true, goldHistory: true, share: true, ...window.APP_CONFIG?.features };
+const FEATURES = { borsa: true, market: true, marketHistory: true, gold: true, goldHistory: true, share: true, ...window.APP_CONFIG?.features };
 FEATURES.marketHistory &&= FEATURES.market;
 FEATURES.goldHistory &&= FEATURES.gold;
 const HISTORY_API_URL = "/api/market/history";
@@ -68,6 +68,7 @@ const STR = {
     karat: (k) => `عيار ${k}`,
     spotLabel: "السعر العالمي للأونصة",
     rateLabel: "سعر صرف الدولار (بغداد، بيع)",
+    rateLabelMarket: "سعر صرف الدولار (متوسط السوق)",
     goldError: "تعذّر جلب سعر الذهب.",
     shareAll: "مشاركة الأسعار",
     bestLegend: "أفضل سعر بين المدن",
@@ -86,6 +87,7 @@ const STR = {
     historyLabel: (from, to, low, high) => `سعر السوق من ${from} إلى ${to}، بين ${low} و ${high} دينار`,
     shareMarket: (mid, gap) => `متوسط السوق: ${mid}${gap ? ` · ${gap} عن السعر الرسمي` : ""}`,
     goldFootnote: "السعر العالمي للذهب لكل مثقال (5 غرامات)، محوّلاً إلى الدينار بسعر بيع الدولار في بغداد. قد يختلف عن أسعار محلات الذهب.",
+    goldFootnoteMarket: "السعر العالمي للذهب لكل مثقال (5 غرامات)، محوّلاً إلى الدينار بمتوسط سعر الدولار في السوق. قد يختلف عن أسعار محلات الذهب.",
     source: "المصدر:",
     disclaimerLabel: "تنبيه:",
     disclaimer: "يعرض هذا التطبيق أسعاراً منشورة في مصادر عامة للاطلاع فقط، ولا يعمل في تداول العملات أو الذهب أو صرفها.",
@@ -119,6 +121,7 @@ const STR = {
       },
     ],
     errorTitle: "تعذّر جلب الأسعار",
+    cityUnavailable: "أسعار بغداد والبصرة وأربيل غير متاحة حالياً.",
     errorBody: "تحقق من اتصالك بالإنترنت ثم حاول مجدداً",
     retry: "إعادة المحاولة",
     refreshed: "تم تحديث الأسعار",
@@ -129,6 +132,7 @@ const STR = {
     goldShareTitle: "🪙 أسعار الذهب لكل مثقال",
     goldShareLine: (k, iqd, usd) => `عيار ${k}: ${iqd} د.ع ($${usd})`,
     goldShareNote: "السعر العالمي محوّلاً بسعر صرف بغداد",
+    goldShareNoteMarket: "السعر العالمي محوّلاً بمتوسط سعر الدولار في السوق",
   },
   en: {
     appName: "Iraq Exchange",
@@ -155,6 +159,7 @@ const STR = {
     karat: (k) => `${k} karat`,
     spotLabel: "World price per ounce",
     rateLabel: "Dollar rate (Baghdad, sell)",
+    rateLabelMarket: "Dollar rate (market average)",
     goldError: "Couldn't load the gold price.",
     shareAll: "Share rates",
     bestLegend: "Best rate across cities",
@@ -173,6 +178,7 @@ const STR = {
     historyLabel: (from, to, low, high) => `Market price from ${from} to ${to}, between ${low} and ${high} dinars`,
     shareMarket: (mid, gap) => `Market average: ${mid}${gap ? ` · ${gap} vs the official rate` : ""}`,
     goldFootnote: "World gold price per mithqal (5 g), converted to dinars at Baghdad's dollar sell rate. Gold shops may charge more.",
+    goldFootnoteMarket: "World gold price per mithqal (5 g), converted to dinars at the Iraq market average dollar rate. Gold shops may charge more.",
     source: "Source:",
     disclaimerLabel: "Disclaimer:",
     disclaimer: "This app only shows prices published by public sources, for information only. It doesn't trade or exchange currencies or gold.",
@@ -206,6 +212,7 @@ const STR = {
       },
     ],
     errorTitle: "Couldn't load rates",
+    cityUnavailable: "Baghdad, Basra and Erbil prices aren't available right now.",
     errorBody: "Check your internet connection and try again",
     retry: "Try again",
     refreshed: "Rates updated",
@@ -216,6 +223,7 @@ const STR = {
     goldShareTitle: "🪙 Gold prices per mithqal",
     goldShareLine: (k, iqd, usd) => `${k} karat: ${iqd} IQD ($${usd})`,
     goldShareNote: "World price converted at Baghdad's dollar rate",
+    goldShareNoteMarket: "World price converted at the market average dollar rate",
   },
 };
 
@@ -296,6 +304,8 @@ const state = {
   goldHistoryFailed: false,
   goldAt: 0,
   goldFailed: false,
+  marketAt: 0,
+  loadedAt: 0,
   loading: false,
   offline: navigator.onLine === false,
 };
@@ -363,11 +373,28 @@ function goldUsd(karat) {
   return oz == null ? null : (oz / TROY_OUNCE_GRAMS) * MITHQAL_GRAMS * (karat / 24);
 }
 
+// Dinars per dollar for gold: Baghdad's sell rate, or the Iraq market average when the
+// borsa is switched off or down.
+function goldDollar() {
+  const baghdad = rateOf(GOLD_RATE_CITY, "sell");
+  if (baghdad != null) return { rate: baghdad, source: "baghdad" };
+  const mid = Number(state.market?.mid);
+  return mid > 0 ? { rate: mid, source: "market" } : null;
+}
+
 function goldIqd(karat) {
   const usd = goldUsd(karat);
-  const rate = rateOf(GOLD_RATE_CITY, "sell");
+  const rate = goldDollar()?.rate;
   return usd == null || rate == null ? null : Math.round(usd * rate);
 }
+
+// What the Dollar tab can show. A source is "down" when it's switched off, or failed with
+// nothing cached; the tab only shows the error screen when both are.
+const citiesDown = () => !state.data && (!FEATURES.borsa || state.failed);
+const marketDown = () => !state.market && (!FEATURES.market || state.marketFailed);
+const usdDown = () => citiesDown() && marketDown();
+// Whether this refresh got no dollar prices at all.
+const dollarFailed = () => (!FEATURES.borsa || state.failed) && (!FEATURES.market || state.marketFailed);
 
 const arrow = (dir) =>
   `<svg class="tri" viewBox="0 0 10 10" aria-hidden="true"><path fill="currentColor" d="${dir > 0 ? "M5 1.2 9.4 8.3H.6z" : "M5 8.8.6 1.7h8.8z"}"/></svg>`;
@@ -436,8 +463,8 @@ const els = {
   foot: $("foot"),
   legend: $("legend"),
   footnote: $("footnote"),
-  goldSource: $("goldSource"),
-  marketSource: $("marketSource"),
+  sources: $("sources"),
+  goldRateLabel: $("goldRateLabel"),
   toast: $("toast"),
   legalBtn: $("legalBtn"),
   legalSheet: $("legalSheet"),
@@ -493,7 +520,8 @@ function buildCards() {
       </div>
       ${FEATURES.marketHistory ? historyBlock("market", "historyTitle") : ""}
       <div class="market-updated" data-role="updated"></div>
-    </section>` : "") + CITIES.map((c, i) => `
+    </section>` : "") + (FEATURES.borsa ? `
+    <p class="card city-notice" id="cityNotice" hidden><span data-i18n="cityUnavailable"></span> <button class="link-btn" type="button" data-i18n="retry"></button></p>` + CITIES.map((c, i) => `
     <section class="card city" data-city="${c.key}" style="--i:${i + (FEATURES.market ? 2 : 1)}">
       <div class="city-head">
         <h2 class="city-name" data-role="name"></h2>
@@ -508,7 +536,7 @@ function buildCards() {
             <div class="price-sub"><span data-role="pre"></span><span class="num" data-role="per100"></span><span data-role="post"></span></div>
           </div>`).join("")}
       </div>
-    </section>`).join("");
+    </section>`).join("") : "");
 
   const marketCard = els.usdPanel.querySelector("#marketCard");
   const mq = (r) => marketCard.querySelector(`[data-role="${r}"]`);
@@ -518,7 +546,8 @@ function buildCards() {
     ...Object.fromEntries(["mid", "per100", "pre", "post", "change", "sell", "buy", "spread", "spreadPct", "gap", "gapPct", "updated"].map((r) => [r, mq(r)])),
   };
 
-  els.cardEls = Object.fromEntries(CITIES.map((c) => {
+  els.cityNotice = $("cityNotice");
+  els.cardEls = !FEATURES.borsa ? {} : Object.fromEntries(CITIES.map((c) => {
     const card = els.usdPanel.querySelector(`[data-city="${c.key}"]`);
     const prices = Object.fromEntries(KINDS.map((kind) => {
       const col = card.querySelector(`.price[data-kind="${kind}"]`);
@@ -547,7 +576,6 @@ function buildCards() {
   if (FEATURES.goldHistory) $("goldCard").insertAdjacentHTML("beforeend", historyBlock("gold", "goldHistoryTitle"));
   els.tabs.hidden = !FEATURES.gold;
   els.shareBtn.hidden = !FEATURES.share;
-  els.marketSource.hidden = !marketCard;
   els.charts = Object.fromEntries([...document.querySelectorAll("[data-history]")].map((block) => [block.dataset.history, {
     block,
     tfButtons: [...block.querySelectorAll(".history-tfs button")],
@@ -577,9 +605,8 @@ function applyLanguage() {
       <p>${section.text}</p>
       ${section.items ? `<ul>${section.items.map((item) => `<li>${item}</li>`).join("")}</ul>` : ""}
     </section>`).join("");
-  for (const c of CITIES) {
-    const card = els.cardEls[c.key];
-    card.name.textContent = cityName(c.key);
+  for (const [key, card] of Object.entries(els.cardEls)) { // none while the borsa is off
+    card.name.textContent = cityName(key);
     for (const kind of KINDS) {
       card.prices[kind].pre.textContent = s.per100[0];
       card.prices[kind].post.textContent = s.per100[1];
@@ -589,11 +616,16 @@ function applyLanguage() {
 }
 
 function renderCards({ animate = false } = {}) {
+  if (!FEATURES.borsa) return; // switched off from the dashboard
   const s = t();
   const best = Object.fromEntries(KINDS.map((k) => [k, bestCities(k)]));
+  // Down with the market average up: a short notice in place of the city cards.
+  const down = citiesDown();
+  els.cityNotice.hidden = !down || marketDown();
 
   for (const c of CITIES) {
     const card = els.cardEls[c.key];
+    card.card.hidden = down;
 
     for (const kind of KINDS) {
       const p = card.prices[kind];
@@ -632,8 +664,10 @@ function renderCards({ animate = false } = {}) {
 }
 
 function renderGold({ animate = false } = {}) {
+  const s = t();
   const goldDown = !state.gold && state.goldFailed;
-  const rateDown = !state.data && state.failed;
+  const dollar = goldDollar();
+  const rateDown = usdDown();
 
   for (const k of KARATS) {
     const r = els.karatEls[k];
@@ -663,7 +697,8 @@ function renderGold({ animate = false } = {}) {
     els.spot.classList.remove("sk");
     setNumber(els.spot, spot, { animate, format: (v) => `$${fmtUsd.format(v)}`, step: 0.01 });
   }
-  const rate = rateOf(GOLD_RATE_CITY, "sell");
+  els.goldRateLabel.textContent = dollar?.source === "market" ? s.rateLabelMarket : s.rateLabel;
+  const rate = dollar?.rate ?? null;
   if (rate == null) setPlaceholder(els.goldRate, "0,000.0", rateDown);
   else {
     els.goldRate.classList.remove("sk");
@@ -939,16 +974,30 @@ function drawHistory(kind) {
 
 function applyTab() {
   const gold = isGoldTab();
-  const usdDown = !state.data && state.failed;
+  const down = usdDown();
+  const s = t();
   for (const b of els.tabButtons) b.setAttribute("aria-selected", String(b.dataset.tab === state.tab));
   els.tabs.dataset.active = state.tab;
   els.goldPanel.hidden = !gold;
-  els.usdPanel.hidden = gold || usdDown;
-  els.errorView.hidden = gold || !usdDown;
-  els.legend.hidden = gold;
-  els.goldSource.hidden = !gold;
-  els.footnote.textContent = gold ? t().goldFootnote : t().footnote;
-  els.shareBtn.disabled = gold ? !state.gold : !state.data;
+  els.usdPanel.hidden = gold || down;
+  els.errorView.hidden = gold || !down;
+  els.legend.hidden = gold || citiesDown();
+  els.footnote.textContent = !gold ? s.footnote : goldDollar()?.source === "market" ? s.goldFootnoteMarket : s.goldFootnote;
+  els.shareBtn.disabled = gold ? !state.gold : !state.data && !state.market;
+  renderSources(gold);
+}
+
+const SOURCE_LINKS = { gold: "https://gold-api.com", borsa: "https://iraqborsa.com", market: "https://usdiqd.com" };
+
+// The sources behind the current tab, leaving out any switched off from the dashboard.
+function renderSources(gold) {
+  const keys = [gold && "gold", FEATURES.borsa && "borsa", FEATURES.market && "market"].filter(Boolean);
+  els.sources.replaceChildren(...keys.flatMap((key, i) => {
+    const link = Object.assign(document.createElement("a"), {
+      className: "ext-link", href: SOURCE_LINKS[key], target: "_blank", rel: "noopener", textContent: new URL(SOURCE_LINKS[key]).hostname,
+    });
+    return i ? [" · ", link] : [link];
+  }));
 }
 
 function moveThumb({ instant = false } = {}) {
@@ -967,9 +1016,10 @@ function moveThumb({ instant = false } = {}) {
 function renderStatus() {
   const s = t();
   const gold = isGoldTab();
-  const hasData = gold ? Boolean(state.gold) : Boolean(state.data);
-  const failed = gold ? state.goldFailed : state.failed;
-  const updatedAt = gold ? state.goldAt : state.updatedAt;
+  // On the Dollar tab, the city rates when there are any, otherwise the market average.
+  const hasData = gold ? Boolean(state.gold) : Boolean(state.data || state.market);
+  const failed = gold ? state.goldFailed : state.data ? state.failed : state.marketFailed;
+  const updatedAt = gold ? state.goldAt : state.data ? state.updatedAt : state.marketAt;
   let st;
   let text;
   if (state.offline) {
@@ -1044,51 +1094,24 @@ async function load({ manual = false } = {}) {
 
   // The gold history has its own source, so it doesn't wait for the prices below.
   loadGoldHistory();
-  // The sources load independently: one failing doesn't blank the others.
-  const [usd, gold, market] = await Promise.allSettled([getJSON(API_URL), FEATURES.gold ? getJSON(GOLD_API_URL) : null, FEATURES.market ? getJSON(MARKET_API_URL) : null]);
+  // Each source shows as soon as it arrives, so a slow or failing one doesn't hold up or
+  // blank the others. Sources switched off from the dashboard aren't fetched at all.
+  await Promise.all([
+    FEATURES.borsa && fetchSource(API_URL, applyRates),
+    FEATURES.gold && fetchSource(GOLD_API_URL, applyGold),
+    FEATURES.market && fetchSource(MARKET_API_URL, applyMarket),
+  ]);
   if (manual) await sleep(600);
-  const previous = state.data;
-  const hadGold = Boolean(state.gold);
 
-  if (usd.status === "fulfilled" && CITIES.every((c) => usd.value[c.key])) {
-    state.data = usd.value;
-    state.updatedAt = Date.now();
-    state.failed = false;
-    writeJSON(CACHE_KEY, { data: state.data, t: state.updatedAt });
-  } else {
-    console.error("Failed to load rates:", usd.reason || "unexpected response");
-    state.failed = true;
+  if ((FEATURES.borsa && !state.failed) || (FEATURES.gold && !state.goldFailed) || (FEATURES.market && !state.marketFailed)) {
+    state.offline = false;
   }
-
-  if (FEATURES.gold) {
-    if (gold.status === "fulfilled" && Number(gold.value.price) > 0) {
-      state.gold = gold.value;
-      state.goldAt = Date.now();
-      state.goldFailed = false;
-      writeJSON(GOLD_CACHE_KEY, { gold: state.gold, t: state.goldAt });
-    } else {
-      console.error("Failed to load gold:", gold.reason || "unexpected response");
-      state.goldFailed = true;
-    }
-  }
-
-  if (FEATURES.market) {
-    if (market.status === "fulfilled" && Number(market.value.mid) > 0) {
-      state.market = market.value;
-      state.marketFailed = false;
-      writeJSON(MARKET_CACHE_KEY, { market: state.market, t: Date.now() });
-    } else {
-      console.error("Failed to load market average:", market.reason || "unexpected response");
-      state.marketFailed = true;
-    }
-  }
-
-  if (!state.failed || (FEATURES.gold && !state.goldFailed)) state.offline = false;
   state.loading = false;
+  state.loadedAt = Date.now();
   els.refreshBtn.classList.remove("loading");
-  onFreshData(previous, hadGold);
+  renderAll();
 
-  const tabFailed = isGoldTab() ? state.goldFailed : state.failed;
+  const tabFailed = isGoldTab() ? state.goldFailed : dollarFailed();
   if (manual) {
     if (tabFailed) {
       haptic.error();
@@ -1097,29 +1120,42 @@ async function load({ manual = false } = {}) {
       haptic.success();
       toast(t().refreshed);
     }
-  } else if (!state.data && state.failed) {
+  } else if (usdDown()) {
     haptic.error();
   }
   if (!document.hidden) scheduleRefresh();
   if (state.market) loadHistory();
 }
 
-function onFreshData(previous, hadGold) {
+async function fetchSource(url, apply) {
+  let value = null;
+  try {
+    value = await getJSON(url);
+  } catch (err) {
+    console.error(`Failed to load ${url}:`, err);
+  }
+  apply(value);
+}
+
+const appear = (nodes) => nodes.forEach((el) => restartAnimation(el, "appear"));
+
+function applyRates(value) {
+  const previous = state.data;
+  if (value && CITIES.every((c) => value[c.key])) {
+    state.data = value;
+    state.updatedAt = Date.now();
+    state.failed = false;
+    writeJSON(CACHE_KEY, { data: state.data, t: state.updatedAt });
+  } else {
+    state.failed = true;
+  }
   renderAll({ animate: true });
 
   if (!previous && state.data) {
-    for (const el of els.usdPanel.querySelectorAll(".price-value .num, .delta, .price-sub .num, [data-role='spread']")) {
-      restartAnimation(el, "appear");
-    }
+    appear(els.usdPanel.querySelectorAll(".city .price-value .num, .city .delta, .city .price-sub .num, .city [data-role='spread']"));
   }
-  if (!hadGold && state.gold) {
-    for (const el of els.goldPanel.querySelectorAll(".karat-iqd .num, .karat-usd .num, #spot")) {
-      restartAnimation(el, "appear");
-    }
-  }
-
   let changed = 0;
-  if (previous) {
+  if (previous && state.data) {
     for (const c of CITIES) {
       for (const kind of KINDS) {
         const before = Number(previous[c.key]?.[kind]);
@@ -1133,6 +1169,34 @@ function onFreshData(previous, hadGold) {
   if (changed) haptic.soft();
 }
 
+function applyGold(value) {
+  const hadGold = Boolean(state.gold);
+  if (Number(value?.price) > 0) {
+    state.gold = value;
+    state.goldAt = Date.now();
+    state.goldFailed = false;
+    writeJSON(GOLD_CACHE_KEY, { gold: state.gold, t: state.goldAt });
+  } else {
+    state.goldFailed = true;
+  }
+  renderAll({ animate: true });
+  if (!hadGold && state.gold) appear(els.goldPanel.querySelectorAll(".karat-iqd .num, .karat-usd .num, #spot"));
+}
+
+function applyMarket(value) {
+  const hadMarket = Boolean(state.market);
+  if (Number(value?.mid) > 0) {
+    state.market = value;
+    state.marketAt = Date.now();
+    state.marketFailed = false;
+    writeJSON(MARKET_CACHE_KEY, { market: state.market, t: state.marketAt });
+  } else {
+    state.marketFailed = true;
+  }
+  renderAll({ animate: true });
+  if (!hadMarket && state.market && els.market) appear(els.market.card.querySelectorAll(".price-value .num, .delta, .price-sub .num"));
+}
+
 /* ---------- Share & toast ---------- */
 
 function shareText() {
@@ -1143,15 +1207,17 @@ function shareText() {
       const iqd = goldIqd(k);
       return s.goldShareLine(k, iqd == null ? "—" : fmtInt.format(iqd), fmtUsd.format(goldUsd(k)));
     });
-    return `${s.goldShareTitle}\n\n${lines.join("\n")}\n\n${s.goldShareNote}`;
+    const note = goldDollar()?.source === "market" ? s.goldShareNoteMarket : s.goldShareNote;
+    return `${s.goldShareTitle}\n\n${lines.join("\n")}\n\n${note}`;
   }
-  if (!state.data) return null;
-  const lines = CITIES.map((c) =>
+  if (!state.data && !state.market) return null;
+  const lines = !state.data ? [] : CITIES.map((c) =>
     s.shareLine(cityName(c.key), fmt.format(rateOf(c.key, "sell")), fmt.format(rateOf(c.key, "buy"))));
   const m = state.market;
   if (m) {
     const gap = m.gapPct == null ? "" : `${m.gapPct >= 0 ? "+" : "−"}${Math.abs(m.gapPct).toFixed(1)}%`;
-    lines.push("", s.shareMarket(fmt.format(m.mid), gap));
+    if (lines.length) lines.push("");
+    lines.push(s.shareMarket(fmt.format(m.mid), gap));
   }
   return `${s.shareTitle}\n\n${lines.join("\n")}`;
 }
@@ -1273,7 +1339,8 @@ function contentRows(tab) {
       qAll("#marketCard .history-block, #marketCard .market-updated"),
     );
   }
-  rows.push(...qAll(".city").map((card) => qAll(".city-head, .price", card)));
+  rows.push(...qAll("#cityNotice:not([hidden])").map((el) => [el]));
+  rows.push(...qAll(".city:not([hidden])").map((card) => qAll(".city-head, .price", card)));
   return rows;
 }
 
@@ -1409,9 +1476,9 @@ function bindEvents() {
     track("refresh");
     load({ manual: true });
   });
-  for (const btn of [els.retryBtn, els.goldRetry]) {
+  for (const btn of [els.retryBtn, els.goldRetry, els.cityNotice?.querySelector("button")].filter(Boolean)) {
     btn.addEventListener("click", () => {
-      state.failed = state.goldFailed = false;
+      state.failed = state.goldFailed = state.marketFailed = false;
       renderAll();
       load({ manual: true });
     });
@@ -1462,7 +1529,7 @@ function bindEvents() {
       clearTimeout(refreshTimer);
       return;
     }
-    const age = Date.now() - state.updatedAt;
+    const age = Date.now() - state.loadedAt;
     if (age > REFRESH_MS / 2) load();
     else scheduleRefresh(REFRESH_MS - age);
     renderStatus();
@@ -1489,7 +1556,7 @@ function init() {
 
   // Show the last known prices instantly, then refresh in the background.
   const cached = readJSON(CACHE_KEY);
-  if (cached?.data && Date.now() - cached.t < CACHE_MAX_AGE_MS) {
+  if (FEATURES.borsa && cached?.data && Date.now() - cached.t < CACHE_MAX_AGE_MS) {
     state.data = cached.data;
     state.updatedAt = cached.t;
   }
@@ -1500,7 +1567,10 @@ function init() {
   const cachedGoldHistory = readJSON(GOLD_HISTORY_CACHE_KEY);
   if (cachedGoldHistory?.points?.length >= 2 && Date.now() - cachedGoldHistory.at < CACHE_MAX_AGE_MS) state.goldHistory = cachedGoldHistory;
   const cachedMarket = readJSON(MARKET_CACHE_KEY);
-  if (FEATURES.market && cachedMarket?.market && Date.now() - cachedMarket.t < CACHE_MAX_AGE_MS) state.market = cachedMarket.market;
+  if (FEATURES.market && cachedMarket?.market && Date.now() - cachedMarket.t < CACHE_MAX_AGE_MS) {
+    state.market = cachedMarket.market;
+    state.marketAt = cachedMarket.t;
+  }
   const cachedGold = readJSON(GOLD_CACHE_KEY);
   if (cachedGold?.gold && Date.now() - cachedGold.t < CACHE_MAX_AGE_MS) {
     state.gold = cachedGold.gold;
