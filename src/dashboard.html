@@ -390,7 +390,7 @@ function lineChart(container, { labels, tipLabels, series }) {
     const x = (i) => m.left + (labels.length === 1 ? iw / 2 : (i / (labels.length - 1)) * iw);
     const y = (v) => m.top + ih - (v / top) * ih;
 
-    const svg = s("svg", { class: "plot", viewBox: `0 0 ${width} ${height}`, height, role: "img", "aria-label": series.map((sr) => sr.name).join(" and ") + " over time" });
+    const svg = s("svg", { class: "plot", viewBox: `0 0 ${width} ${height}`, height, role: "img", "aria-label": series.map((sr) => sr.name).join(", ") + " over time" });
     for (const t of ticks) {
       svg.append(s("line", { class: t === 0 ? "base" : "gridline", x1: m.left, x2: m.left + iw, y1: y(t), y2: y(t) }));
       svg.append(s("text", { class: "tick", x: m.left - 8, y: y(t) + 4, "text-anchor": "end" }, fmtN(t)));
@@ -549,14 +549,21 @@ function trendSeries(st) {
   const tipLabels = [];
   const users = [];
   const opens = [];
+  const appUsers = [];
+  const botUsers = [];
+  const add = (t) => {
+    users.push(t ? t.users : 0);
+    opens.push(t ? t.opens : 0);
+    appUsers.push(t ? t.app_users : 0);
+    botUsers.push(t ? t.bot_users : 0);
+  };
   if (st.range === "today") {
     const hourNow = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Baghdad", hour: "2-digit", hourCycle: "h23" }).format(new Date()));
     for (let hr = 0; hr <= hourNow; hr++) {
       const t = byBucket.get(String(hr));
       labels.push(`${String(hr).padStart(2, "0")}:00`);
       tipLabels.push(`Today ${String(hr).padStart(2, "0")}:00–${String(hr).padStart(2, "0")}:59`);
-      users.push(t ? t.users : 0);
-      opens.push(t ? t.opens : 0);
+      add(t);
     }
   } else {
     const dayMs = 86_400_000;
@@ -568,11 +575,10 @@ function trendSeries(st) {
       const t = byBucket.get(key);
       labels.push(fmt.format(date));
       tipLabels.push(fmtLong.format(date));
-      users.push(t ? t.users : 0);
-      opens.push(t ? t.opens : 0);
+      add(t);
     }
   }
-  return { labels, tipLabels, users, opens };
+  return { labels, tipLabels, users, opens, appUsers, botUsers };
 }
 
 function sumBy(rows, keyFn, valueFn = (r) => r.n) {
@@ -617,23 +623,26 @@ function render(st) {
 
   const tile = (label, now, before) => h("div", { class: "tile" }, h("div", { class: "tile-label" }, label), h("div", { class: "tile-value" }, fmtN(now)), delta(now, before, r.prev));
   const tiles = h("div", { class: "tiles" },
+    tile("App users", k.app_users, p.app_users),
     tile("App opens", k.opens, p.opens),
-    tile("Telegram users", k.telegram_users, p.telegram_users),
+    tile("App users in Telegram", k.telegram_users, p.telegram_users),
     tile("Browser visitors", k.browser_users, p.browser_users),
     tile("Bot users", k.bot_users, p.bot_users),
     tile("Bot actions", k.bot_actions, p.bot_actions),
     tile("Shares from the app", k.shares, p.shares));
 
-  const hasTrend = trend.users.some((v) => v) || trend.opens.some((v) => v);
+  const hasTrend = trend.users.some((v) => v);
   const activity = card({
     title: st.range === "today" ? "Activity today, by hour" : "Daily activity",
-    hint: "Unique users and app opens",
+    hint: "People who opened the app, how often it was opened, and people who used the bot",
     empty: !hasTrend,
     chart: (el) => lineChart(el, { labels: trend.labels, tipLabels: trend.tipLabels, series: [
-      { name: "Unique users", color: "var(--s1)", values: trend.users },
+      { name: "App users", color: "var(--s1)", values: trend.appUsers },
       { name: "App opens", color: "var(--s2)", values: trend.opens },
+      { name: "Bot users", color: "var(--s3)", values: trend.botUsers },
     ] }),
-    table: () => dataTable([st.range === "today" ? "Hour" : "Day", "Unique users", "App opens"], trend.tipLabels.map((l, i) => [l, trend.users[i], trend.opens[i]])),
+    table: () => dataTable([st.range === "today" ? "Hour" : "Day", "App users", "App opens", "Bot users"],
+      trend.tipLabels.map((l, i) => [l, trend.appUsers[i], trend.opens[i], trend.botUsers[i]])),
   });
 
   const platformRows = topWithOther(st.platforms.map((x) => ({ label: PLATFORMS[x.k] || x.k || "Unknown", value: x.users })), 6);

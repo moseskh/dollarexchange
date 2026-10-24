@@ -105,11 +105,15 @@ function rangeBounds(range, now = Date.now()) {
 
 const all = async (db, sql, ...args) => (await db.prepare(sql).bind(...args).all()).results;
 
+// "users" counts everyone, app and bot together. The app's own numbers count people who
+// opened it, so app opens are never fewer than app users, and Telegram plus browser users
+// add up to app users.
 const KPI_SQL = `
   SELECT
     COUNT(DISTINCT user) AS users,
-    COUNT(DISTINCT CASE WHEN user_kind = 'telegram' THEN user END) AS telegram_users,
-    COUNT(DISTINCT CASE WHEN user_kind = 'browser' THEN user END) AS browser_users,
+    COUNT(DISTINCT CASE WHEN source = 'app' AND event = 'open' THEN user END) AS app_users,
+    COUNT(DISTINCT CASE WHEN source = 'app' AND event = 'open' AND user_kind = 'telegram' THEN user END) AS telegram_users,
+    COUNT(DISTINCT CASE WHEN source = 'app' AND event = 'open' AND user_kind = 'browser' THEN user END) AS browser_users,
     COALESCE(SUM(source = 'app' AND event = 'open'), 0) AS opens,
     COUNT(DISTINCT CASE WHEN source = 'bot' THEN user END) AS bot_users,
     COALESCE(SUM(source = 'bot' AND event IN ('command', 'text', 'button', 'inline')), 0) AS bot_actions,
@@ -127,7 +131,9 @@ export async function dashboardStats(env, range) {
   const [kpi, prev, trend, platforms, countries, prefs, bot, hours, cron, current] = await Promise.all([
     all(db, KPI_SQL, b.start, b.end),
     all(db, KPI_SQL, b.prevStart, b.prevEnd),
-    all(db, `SELECT ${bucket} AS bucket, COUNT(DISTINCT user) AS users, COALESCE(SUM(source = 'app' AND event = 'open'), 0) AS opens
+    all(db, `SELECT ${bucket} AS bucket, COUNT(DISTINCT user) AS users, COALESCE(SUM(source = 'app' AND event = 'open'), 0) AS opens,
+               COUNT(DISTINCT CASE WHEN source = 'app' AND event = 'open' THEN user END) AS app_users,
+               COUNT(DISTINCT CASE WHEN source = 'bot' THEN user END) AS bot_users
              FROM events WHERE ts >= ?1 AND source IN ('app', 'bot') GROUP BY bucket ORDER BY bucket`, b.start),
     all(db, `SELECT platform AS k, COUNT(DISTINCT user) AS users, COUNT(*) AS n FROM events WHERE ${opens} GROUP BY k ORDER BY users DESC`, b.start),
     all(db, `SELECT country AS k, COUNT(DISTINCT user) AS users, COUNT(*) AS n FROM events WHERE ${opens} GROUP BY k ORDER BY users DESC`, b.start),

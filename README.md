@@ -139,7 +139,7 @@ Switches are stored in the `settings` table; a switch without a row is on. The W
 
 ### Analytics
 
-It shows unique users (with the change against the previous period), app opens, Telegram vs browser visitors, bot users and actions, and shares. Charts: daily activity, platforms, countries, how the app is opened (shared link, bot, chat menu, direct), tab, language and theme, bot commands and where they're used, busiest hours (Baghdad time), and daily summaries and alerts sent. Every chart has a table view.
+It shows unique users across the app and bot (with the change against the previous period), app users and app opens, app users in Telegram vs browser visitors, bot users and actions, and shares. Unique users is more than app users whenever people use only the bot; app opens are never fewer than app users, since each app user opened it at least once. Charts: daily activity (app users, app opens and bot users), platforms, countries, how the app is opened (shared link, bot, chat menu, direct), tab, language and theme, bot commands and where they're used, busiest hours (Baghdad time), and daily summaries and alerts sent. Every chart has a table view.
 
 How it's collected:
 
